@@ -6,6 +6,7 @@ import { UserModule } from './user/user.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { VehicleModule } from './vehicle/vehicle.module.js';
 import { RidesModule } from './rides/rides.module.js';
+import { BookingsModule } from './bookings/bookings.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -21,6 +22,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule,
     VehicleModule,
     RidesModule,
+    BookingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
