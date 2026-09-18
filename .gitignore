@@ -57,3 +57,29 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+
+# Dependencies
+node_modules/
+
+# Compiled output
+dist/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# Allow an example environment file to be committed
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# IDE/editor files
+.vscode/
+.idea/
