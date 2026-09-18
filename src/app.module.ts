@@ -2,13 +2,13 @@ import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
-import { UserModule } from './user/user.module.js';
+import { UserModule } from './users/user.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { VehicleModule } from './vehicle/vehicle.module.js';
 import { RidesModule } from './rides/rides.module.js';
 import { BookingsModule } from './bookings/bookings.module.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from './user/user.entity.js';
+import { User } from './users/user.entity.js';
 
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
