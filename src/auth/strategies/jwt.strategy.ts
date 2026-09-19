@@ -15,7 +15,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
         // We want Passport to reject expired tokens.
           ignoreExpiration: false,
-        //tells passport to use the same secret that we use in generating the token
+        //tells passport to use the same secret that we use in generating
         secretOrKey: configService.get<string>('JWT_SECRET')!,
       });
   }
