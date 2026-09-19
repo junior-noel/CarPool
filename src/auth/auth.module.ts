@@ -27,6 +27,6 @@ import { UserModule } from '../users/user.module.js';
   controllers: [AuthController],
   // Register the service containing signup and login logic.
   providers: [AuthService],
-  exports: [AuthService]
+  exports: [AuthService],
 })
 export class AuthModule {}
