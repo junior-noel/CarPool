@@ -1,8 +1,10 @@
 
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Get } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { signupDto } from './dto/signup.dto.js';
 import { loginDto } from './dto/login.dto.js';
+import { request } from 'http';
+
 
 @Controller('auth')
 export class AuthController {
@@ -21,5 +23,16 @@ export class AuthController {
   login(@Body() loginDto: loginDto) {
     // Pass the login data to AuthService for verification.
     return this.authService.login(loginDto);
+  }
+
+
+  @Get('profile')
+  getProfile() {
+
+    return {
+      message: "You are authenticiated",
+      //user: request.user
+    }
+    
   }
 }
