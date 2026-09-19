@@ -3,6 +3,7 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtModule } from '@nestjs/jwt';
 import { UserModule } from '../users/user.module.js';
+import { JwtStrategy } from './strategies/jwt.strategy.js';
 
 @Module({
   imports: [
@@ -25,8 +26,8 @@ import { UserModule } from '../users/user.module.js';
 
   // Register the controller responsible for authentication routes.
   controllers: [AuthController],
-  // Register the service containing signup and login logic.
-  providers: [AuthService],
+  // Register the service containing signup and login logic and authentication strategy.
+  providers: [AuthService, JwtStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}
