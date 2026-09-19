@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
@@ -17,15 +18,22 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
       defaultStrategy: 'jwt',
     }),
 
-    // Configure JWT for creating and verifying tokens.
-    JwtModule.register({
-      // Secret used to sign and verify JWT tokens.
-      secret: process.env.JWT_SECRET || 'development_secret_change_me',
+    // Configure JWT asynchronously so ConfigService can read
+    // JWT_SECRET from the .env file before JWT is configured.
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
 
-      // Token expiration time.
-      signOptions: {
-        expiresIn: '1d',
-      },
+      inject: [ConfigService],
+
+      useFactory: (configService: ConfigService) => ({
+        // Use the same secret that JwtStrategy uses.
+        secret: configService.get<string>('JWT_SECRET'),
+
+        // Token expiration time.
+        signOptions: {
+          expiresIn: '1d',
+        },
+      }),
     }),
   ],
 
