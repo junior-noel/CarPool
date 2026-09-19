@@ -9,17 +9,23 @@ import { RidesModule } from './rides/rides.module.js';
 import { BookingsModule } from './bookings/bookings.module.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './users/user.entity.js';
+import { ConfigModule } from '@nestjs/config';
 
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
-    ObserveModule.forRoot({
-      appKey: 'YOUR_APP_KEY',
-      appSecret: 'YOUR_APP_SECRET',
-      serviceId: 'car-pool',
+
+    ConfigModule.forRoot({
+      isGlobal: true,
     }),
+
+    // ObserveModule.forRoot({
+    //   appKey: 'YOUR_APP_KEY',
+    //   appSecret: 'YOUR_APP_SECRET',
+    //   serviceId: 'car-pool',
+    // }),
 
     UserModule,
     AuthModule,
