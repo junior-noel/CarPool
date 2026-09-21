@@ -35,5 +35,5 @@ export class User {
 
   // Automatically updates whenever the user record changes.
   @UpdateDateColumn()
-  updatetedAt: Date;
+  updateAt: Date;
 }

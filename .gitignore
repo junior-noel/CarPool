@@ -69,8 +69,6 @@ dist/
 .env
 .env.*
 
-# Allow an example environment file to be committed
-!.env.example
 
 # Logs
 logs/
