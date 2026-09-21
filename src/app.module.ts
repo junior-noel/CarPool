@@ -5,6 +5,7 @@ import { AppService } from './app.service.js';
 import { UserModule } from './users/user.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { VehicleModule } from './vehicles/vehicle.module.js';
+import { Vehicle } from './vehicles/vehicle.entity.js';
 import { RidesModule } from './rides/rides.module.js';
 import { BookingsModule } from './bookings/bookings.module.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -41,7 +42,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       username: 'postgres',
       password: 'postgresql',
       database: 'CarPool',
-      entities: [User],
+      entities: [User, Vehicle],
       synchronize: true,
     }),
   ],

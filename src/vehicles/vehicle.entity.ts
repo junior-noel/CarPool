@@ -9,7 +9,7 @@ import {
 import { User } from '../users/user.entity.js';
 
 @Entity('vehicles')
-export class vehicle {
+export class Vehicle {
   @PrimaryGeneratedColumn()
   id: number;
 
