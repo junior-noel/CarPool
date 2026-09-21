@@ -4,14 +4,15 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { UserModule } from './users/user.module.js';
 import { AuthModule } from './auth/auth.module.js';
-import { VehicleModule } from './vehicles/vehicle.module.js';
 import { Vehicle } from './vehicles/vehicle.entity.js';
 import { RidesModule } from './rides/rides.module.js';
 import { BookingsModule } from './bookings/bookings.module.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './users/user.entity.js';
 import { ConfigModule } from '@nestjs/config';
-
+import { VehicleModule } from './vehicles/vehicle.module.js';
+import { DriverApplicationModule } from './driver-application/driver-application.module.js';
+import { DriverApplication } from './driver-application/driver-application.entity.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -33,6 +34,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     VehicleModule,
     RidesModule,
     BookingsModule,
+    DriverApplicationModule,
 
     //NestJS module configuration that connect the aplcation to the database
     TypeOrmModule.forRoot({
@@ -42,7 +44,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       username: 'postgres',
       password: 'postgresql',
       database: 'CarPool',
-      entities: [User, Vehicle],
+      entities: [User, Vehicle, DriverApplication],
       synchronize: true,
     }),
   ],

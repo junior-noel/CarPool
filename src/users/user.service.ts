@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './user.entity.js';
 import { Repository } from 'typeorm';
 import { createUserDto } from './dto/create-user.dto.js';
-import { promises } from 'dns';
 
 
 // @Injectable allows NestJS to create and inject this service
