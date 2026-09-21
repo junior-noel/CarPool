@@ -40,5 +40,5 @@ export class Vehicle {
   createdAt: Date;
 
   @UpdateDateColumn()
-  updateAt: Date;
+  updatedAt: Date;
 }

@@ -21,7 +21,7 @@ export class VehicleService {
     CreateVehicleDto: CreateVehicleDto,
       userId: number,
     
-  ): Promise<Vehicle> {
+  ): Promise<Omit<Vehicle, 'owner'>> {
       // Find the user who is creating the vehicle.
       const owner = await this.userService.findById(userId)
       if (!owner) {
@@ -32,6 +32,8 @@ export class VehicleService {
       ...CreateVehicleDto, owner
     });
 
-    return this.vehicleRepository.save(vehicle);
+      const savedVehicle = await this.vehicleRepository.save(vehicle);
+      const { owner: _, ...vehicleWithoutOwner } = savedVehicle;
+      return vehicleWithoutOwner;
   }
 }
