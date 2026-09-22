@@ -79,7 +79,7 @@ export class DriverApplicationService{
 
         //save the updated user
         await this.userService.updateRole(
-            applcation.user.id, 'diver',
+            applcation.user.id, 'driver',
         )
 
         //make the spplcston as approve

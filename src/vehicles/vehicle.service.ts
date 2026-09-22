@@ -11,6 +11,7 @@ import { ExceptionsHandler } from '@nestjs/core/exceptions/exceptions-handler.js
 @Injectable()
 export class VehicleService {
   constructor(
+    //repostory use to create and store vehcle
     @InjectRepository(Vehicle)
       private readonly vehicleRepository: Repository<Vehicle>,
       private readonly userService: UserService,

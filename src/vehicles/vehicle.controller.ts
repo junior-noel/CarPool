@@ -9,17 +9,16 @@ import { DriverGuard } from '../auth/guards/driver.guard.js';
 export class VehicleController {
   constructor(private readonly vehicleService: VehicleService) {}
 
-  @UseGuards(JwtAuthGuard)
-  @UseGuards(DriverGuard)
+  @UseGuards(JwtAuthGuard, DriverGuard)
   @Post()
   createVehicle(
-    @Body() CreateVehicleDto: CreateVehicleDto,
+    @Body() createVehicleDto: CreateVehicleDto,
     @Req() request: AuthenticatedRequest,
   ) {
     //The controller gets the user ID from the JWT.  userId comes from the verified JWT token.
     const userId = request.user.userId;
 
     // Pass the vehicle data and authenticated user's ID to the service.
-    return this.vehicleService.create(CreateVehicleDto, userId);
+    return this.vehicleService.create(createVehicleDto, userId);
   }
 }
