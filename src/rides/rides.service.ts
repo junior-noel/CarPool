@@ -16,80 +16,100 @@ import { CreateRideDto } from './dto/create-ride-dto.js';
 
 @Injectable()
 export class RidesService {
-  constructor(
-    // Repository used to create and save rides.
-    @InjectRepository(Ride)
-    private readonly rideRepository: Repository<Ride>,
+    constructor(
+        // Repository used to create and save rides.
+        @InjectRepository(Ride)
+        private readonly rideRepository: Repository<Ride>,
 
-    // Repository used to find the vehicle selected by the driver.
-    @InjectRepository(Vehicle)
-    private readonly vehicleRepository: Repository<Vehicle>,
+        // Repository used to find the vehicle selected by the driver.
+        @InjectRepository(Vehicle)
+        private readonly vehicleRepository: Repository<Vehicle>,
 
-    // Used to find the authenticated user.
-    private readonly userService: UserService,
-  ) {}
+        // Used to find the authenticated user.
+        private readonly userService: UserService,
+    ) { }
 
-  async create(userId: number, createRideDto: CreateRideDto): Promise<Ride> {
-    // Find the authenticated user who is creating the ride.
-    const driver = await this.userService.findById(userId);
+    async create(userId: number, createRideDto: CreateRideDto): Promise<any> {
+        // Find the authenticated user who is creating the ride.
+        const driver = await this.userService.findById(userId);
 
-    if (!driver) {
-      throw new NotFoundException('Driver not found');
-    }
+        if (!driver) {
+            throw new NotFoundException('Driver not found');
+        }
 
-    // Find the vehicle selected by the driver.
-    // We also load the owner so that we can verify ownership.
-    const vehicle = await this.vehicleRepository.findOne({
-      where: {
-        id: createRideDto.vehicleId,
-      },
-      relations: ['owner'],
-    });
+        // Find the vehicle selected by the driver. We also load the owner so that we can verify ownership.
+        const vehicle = await this.vehicleRepository.findOne({
+            where: {
+                id: createRideDto.vehicleId,
+            },
+            relations: ['owner'],
+        });
 
-    if (!vehicle) {
-      throw new NotFoundException('Vehicle not found');
-    }
+        if (!vehicle) {
+            throw new NotFoundException('Vehicle not found');
+        }
 
-    if (vehicle.owner.id !== userId) {
-      throw new ForbiddenException('You can only use your own vehicle');
-    }
+        if (vehicle.owner.id !== userId) {
+            throw new ForbiddenException('You can only use your own vehicle');
+        }
 
-    // A driver cannot make more seats available than the actual capacity of the vehicle.
-    if (createRideDto.availableSeats > vehicle.seats) {
-      throw new BadRequestException(
-        'Available seats cannot exceed vehicle capacity',
-      );
-    }
+        // A driver cannot make more seats available than the actual capacity of the vehicle.
+        if (createRideDto.availableSeats > vehicle.seats) {
+            throw new BadRequestException(
+                'Available seats cannot exceed vehicle capacity',
+            );
+        }
 
-    // Create the ride using the information from the DTO.
-    const ride = this.rideRepository.create({
+        // Create the ride using the information from the DTO.
+        const ride = this.rideRepository.create({
       
-      origin: createRideDto.origin,
+            origin: createRideDto.origin,
 
-      destination: createRideDto.destination,
+            destination: createRideDto.destination,
 
-      // Convert the date received from the request into a JavaScript Date object.
-      departureDate: new Date(createRideDto.departureDate),
+            // Convert the date received from the request into a JavaScript Date object.
+            departureDate: new Date(createRideDto.departureDate),
 
-      departureTime: createRideDto.departureTime,
+            departureTime: createRideDto.departureTime,
 
-      // The total number of seats comes from the vehicle. We don't allow the client to invent this value.
-      totalSeat: vehicle.seats,
+            // The total number of seats comes from the vehicle. We don't allow the client to invent this value.
+            totalSeat: vehicle.seats,
 
-      // Number of seats the driver makes availableto passengers.
-      availableSeat: createRideDto.availableSeats,
+            // Number of seats the driver makes availableto passengers.
+            availableSeat: createRideDto.availableSeats,
 
-      // Map the DTO field to the entity field.
-      seatPerPrice: createRideDto.pricePerSeat,
+            // Map the DTO field to the entity field.
+            seatPerPrice: createRideDto.pricePerSeat,
 
-      // The authenticated user becomes the driver.
-      driver,
+            // The authenticated user becomes the driver.
+            driver,
 
-      // The selected vehicle is associated with the ride.
-      vehicle,
-    });
+            // The selected vehicle is associated with the ride.
+            vehicle,
+        });
 
-    // Save the ride in PostgreSQL and return the saved record.
-    return this.rideRepository.save(ride);
-  }
+        /// Save the ride in PostgreSQL.
+const savedRide = await this.rideRepository.save(ride);
+
+// Remove the password from the driver before returning the response.
+const { password: driverPassword, ...safeDriver } = savedRide.driver;
+
+// Remove the password from the vehicle owner before returning the response.
+const { password: ownerPassword, ...safeOwner } =
+    savedRide.vehicle.owner;
+
+// Return a safe version of the ride.The database record itself is NOT modified.
+return {
+    ...savedRide,
+
+    // Driver information without the password.
+    driver: safeDriver,
+
+    // Vehicle information with the owner password removed.
+    vehicle: {
+        ...savedRide.vehicle,
+        owner: safeOwner,
+    },
+};
+    }
 }
