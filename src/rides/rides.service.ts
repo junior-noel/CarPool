@@ -50,14 +50,11 @@ export class RidesService {
       throw new NotFoundException('Vehicle not found');
     }
 
-    // Make sure the selected vehicle actually belongs
-    // to the authenticated driver.
     if (vehicle.owner.id !== userId) {
       throw new ForbiddenException('You can only use your own vehicle');
     }
 
-    // A driver cannot make more seats available than
-    // the actual capacity of the vehicle.
+    // A driver cannot make more seats available than the actual capacity of the vehicle.
     if (createRideDto.availableSeats > vehicle.seats) {
       throw new BadRequestException(
         'Available seats cannot exceed vehicle capacity',
@@ -66,26 +63,20 @@ export class RidesService {
 
     // Create the ride using the information from the DTO.
     const ride = this.rideRepository.create({
-      // Starting location.
+      
       origin: createRideDto.origin,
 
-      // Destination of the ride.
       destination: createRideDto.destination,
 
-      // Convert the date received from the request
-      // into a JavaScript Date object.
+      // Convert the date received from the request into a JavaScript Date object.
       departureDate: new Date(createRideDto.departureDate),
 
-      // PostgreSQL TIME is represented as a string.
-      // Example: "08:30".
       departureTime: createRideDto.departureTime,
 
-      // The total number of seats comes from the vehicle.
-      // We don't allow the client to invent this value.
+      // The total number of seats comes from the vehicle. We don't allow the client to invent this value.
       totalSeat: vehicle.seats,
 
-      // Number of seats the driver makes available
-      // to passengers.
+      // Number of seats the driver makes availableto passengers.
       availableSeat: createRideDto.availableSeats,
 
       // Map the DTO field to the entity field.

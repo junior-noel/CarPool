@@ -36,7 +36,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     RidesModule,
     BookingsModule,
     DriverApplicationModule,
-    RidesModule,
+   
 
     //NestJS module configuration that connect the aplcation to the database
     TypeOrmModule.forRoot({
