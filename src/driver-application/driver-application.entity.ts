@@ -53,6 +53,6 @@ export class DriverApplication {
   @Column({ type: 'timestamp', nullable: true })
   reviewedAt: Date | null;
 
-  @Column({ nullable: true })
-  rejectionReason: string;
+  @Column({type: 'varchar', nullable: true })
+  rejectionReason: string | null;
 }

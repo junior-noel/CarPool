@@ -34,5 +34,16 @@ export class UserService {
         return this.userRepository.findOne({
             where: { id }
         });
-    }
+  }
+  
+  async updateRole(
+    userId: number,
+    role: string
+  ): Promise<void>{
+    //update only the user role
+    await this.userRepository.update(
+      userId,
+      {role}
+    )
+  }
 }

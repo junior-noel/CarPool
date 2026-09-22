@@ -1,4 +1,9 @@
-import {ConflictException,Injectable,NotFoundException,} from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {DriverApplication,DriverApplicationStatus,} from './driver-application.entity.js';
@@ -50,5 +55,36 @@ export class DriverApplicationService{
         });
 
         return this.applicationRepository.save(applcation);
+    }
+
+    async approve(applcationId: number): Promise<DriverApplication>{
+      //find the driver applicaton
+      const applcation = await this.applicationRepository.findOne({
+        where: { id: applcationId },
+        relations: ['user'],
+      });
+
+      // Stop if the application doesn't exist.
+      if (!applcation) {
+        throw new NotFoundException('Driver application not found');
+      }
+
+        // An application that has already been reviewed should not be approved again.
+        if (applcation.status !== DriverApplicationStatus.PENDING) {
+            throw new BadRequestException( 'This driver application has already been reviewed', );
+        }
+
+        //Change the applcaton role to drver
+        applcation.user.role = 'driiver';
+
+        //save the updated user
+        await this.userService.updateRole(
+            applcation.user.id, 'diver',
+        )
+
+        //make the spplcston as approve
+        applcation.status = DriverApplicationStatus.APPROVED;
+        applcation.reviewedAt = new Date();
+        return this.applicationRepository.save(applcation)
     }
 }
