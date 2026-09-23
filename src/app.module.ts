@@ -14,6 +14,8 @@ import { VehicleModule } from './vehicles/vehicle.module.js';
 import { DriverApplicationModule } from './driver-application/driver-application.module.js';
 import { DriverApplication } from './driver-application/driver-application.entity.js';
 import { Ride } from './rides/ride.entity.js';
+import { RideRequestModule } from './ride-request/ride-request.module.js';
+import { RideRequest } from './ride-request/ride-request.entity.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -36,6 +38,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     RidesModule,
     BookingsModule,
     DriverApplicationModule,
+    RideRequestModule,
    
 
     //NestJS module configuration that connect the aplcation to the database
@@ -46,7 +49,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       username: 'postgres',
       password: 'postgresql',
       database: 'CarPool',
-      entities: [User, Vehicle, DriverApplication, Ride,],
+      //TypeORM knows about the database table
+      entities: [User, Vehicle, DriverApplication, Ride, RideRequest,],
       synchronize: true,
     }),
   ],
