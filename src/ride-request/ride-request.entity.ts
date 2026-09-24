@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 
 import { User } from '../users/user.entity.js';
+import { Ride } from '../rides/ride.entity.js';
 
  //Represents the current state of a passenger's ride request.
 export enum RideRequestStatus {
@@ -58,10 +59,13 @@ export class RideRequest {
   passenger: User;
 
   // Driver who accepted the request.This is nullable because a newly-created request does not have a driver yet.
-  @ManyToOne(() => User, {
-    nullable: true,
-  })
-  driver: User | null;
+  // @ManyToOne(() => User, {
+  //   nullable: true,
+  // })
+  // driver: User | null;
+
+  @ManyToOne(() => Ride, { nullable: true })
+  ride: Ride | null;
 
   @CreateDateColumn()
   createdAt: Date;

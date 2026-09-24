@@ -4,6 +4,7 @@ import {
   Min,
   IsDateString,
   IsInt,
+  IsOptional,
 } from 'class-validator';
 
 export class CreateRideRequestDto {
@@ -25,4 +26,12 @@ export class CreateRideRequestDto {
   @IsInt()
   @Min(1)
   seatsNeeded: number;
+
+  // Optional:
+  // If provided, the passenger is requesting a specific existing ride.
+  // If omitted, this is a general request for a driver to fulfill.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  rideId?: number;
 }

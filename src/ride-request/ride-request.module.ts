@@ -6,10 +6,11 @@ import { RideRequestController } from './ride-request.controller.js';
 import { RideRequestService } from './ride-request.service.js';
 import { UserModule } from '../users/user.module.js';
 import { PassengerApplicationModule } from '../passenger-application/passenger-application.module.js';
+import { Ride } from '../rides/ride.entity.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RideRequest]),
+    TypeOrmModule.forFeature([RideRequest, Ride]),
 
     // Allows us to use the authenticated user's JWT when working with this feature.
     PassportModule.register({
