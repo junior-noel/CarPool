@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
-
 import { RideRequest } from './ride-request.entity.js';
 import { RideRequestController } from './ride-request.controller.js';
 import { RideRequestService } from './ride-request.service.js';
-
 import { UserModule } from '../users/user.module.js';
+import { PassengerApplicationModule } from '../passenger-application/passenger-application.module.js';
 
 @Module({
   imports: [
@@ -18,6 +17,7 @@ import { UserModule } from '../users/user.module.js';
     }),
     // Gives RideRequestService access to UserService.
     UserModule,
+    PassengerApplicationModule,
   ],
 
   controllers: [RideRequestController],

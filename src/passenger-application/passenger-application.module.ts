@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { PassengerApplication } from './passenger-application.entity.js';
 import { PassengerApplicationController } from './passenger-application.controller.js';
 import { PassengerApplicationService } from './passenger-application.service.js';
+import { PassengerGuard } from './guards/passenger.guard.js';
 
 import { UserModule } from '../users/user.module.js';
 
@@ -22,7 +23,7 @@ import { UserModule } from '../users/user.module.js';
   ],
 
   controllers: [PassengerApplicationController],
-
-  providers: [PassengerApplicationService],
+  providers: [PassengerApplicationService, PassengerGuard],
+  exports: [PassengerApplicationService, PassengerGuard],
 })
 export class PassengerApplicationModule {}

@@ -7,14 +7,8 @@ import {
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-
-import {
-  PassengerApplication,
-  PassengerApplicationStatus,
-} from './passenger-application.entity.js';
-
+import { PassengerApplication, PassengerApplicationStatus,} from './passenger-application.entity.js';
 import { CreatePassengerApplicationDto } from './dto/create-passenger-application.dto.js';
-
 import { UserService } from '../users/user.service.js';
 import { promises } from 'dns';
 import { User } from '../users/user.entity.js';
@@ -125,5 +119,18 @@ export class PassengerApplicationService {
       reviewedAt: savedApplication.reviewedAt,
       rejectionReason: savedApplication.rejectionReason,
     };
+  }
+
+  async isPassengerApproved(userId: number): Promise<boolean>{
+    const applcation = this.applicationRepository.findOne({
+      where: {
+        user: {
+          id: userId,
+        },
+        status: PassengerApplicationStatus.APPROVED,
+      }
+    });
+
+    return !!applcation;
   }
 }
