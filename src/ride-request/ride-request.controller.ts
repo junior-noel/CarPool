@@ -7,7 +7,7 @@ import { CreateRideRequestDto } from "./dto/create-ride-request.dto.js";
 import { request } from "http";
 import type { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface.js";
 
-@Controller('rideRequest')
+@Controller('ride-request')
 export class RideRequestController {
     constructor(
         private readonly rideRequestService: RideRequestService,
