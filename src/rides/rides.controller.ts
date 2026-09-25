@@ -6,7 +6,7 @@ import { DriverGuard } from '../auth/guards/driver.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
-@ApiTags('Ride')
+@ApiTags('Rides')
   @ApiBearerAuth()
 @Controller('rides')
 export class RidesController {

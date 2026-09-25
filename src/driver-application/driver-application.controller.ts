@@ -12,7 +12,11 @@ import { CreateDriverApplicationDto } from './dto/create-driver-application.dto.
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 import { AdminGuard } from '../auth/guards/admin.guard.js';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+
+@ApiTags('Driver Application')
+  @ApiBearerAuth()
 @Controller('driver-application')
 export class DriverApplicationController {
   constructor(

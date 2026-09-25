@@ -6,7 +6,10 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard.js";
 import { CreateRideRequestDto } from "./dto/create-ride-request.dto.js";
 import type { AuthenticatedRequest } from "../auth/interfaces/authenticated-request.interface.js";
 import { DriverGuard } from "../auth/guards/driver.guard.js";
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Ride Request')
+  @ApiBearerAuth()
 @Controller('ride-request')
 export class RideRequestController {
   constructor(private readonly rideRequestService: RideRequestService) {}

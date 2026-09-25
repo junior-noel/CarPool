@@ -4,7 +4,10 @@ import { CreateVehicleDto } from '../vehicles/dto/create-vehicle.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 import { DriverGuard } from '../auth/guards/driver.guard.js';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Vehicle')
+  @ApiBearerAuth()
 @Controller('vehicle')
 export class VehicleController {
   constructor(private readonly vehicleService: VehicleService) {}
