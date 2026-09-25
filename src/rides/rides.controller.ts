@@ -1,13 +1,13 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
-
 import { RidesService } from './rides.service.js';
 import { CreateRideDto } from './dto/create-ride-dto.js';
-
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { DriverGuard } from '../auth/guards/driver.guard.js';
-
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Ride')
+  @ApiBearerAuth()
 @Controller('rides')
 export class RidesController {
   constructor(private readonly ridesService: RidesService) {}

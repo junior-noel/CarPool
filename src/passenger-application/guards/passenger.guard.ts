@@ -17,7 +17,8 @@ export class PassengerGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    const user = request.user;
+      const user = request.user;
+     console.log('PassengerGuard user:', user);
 
     // The JWT guard should already have authenticated the user.
     if (!user) {
@@ -33,6 +34,7 @@ export class PassengerGuard implements CanActivate {
     const isApproved = await this.passengerApplicationService.isPassengerApproved(
         Number(user.userId),
       );
+      console.log('PassengerGuard isApproved:', isApproved);
 
     if (!isApproved) {
       throw new ForbiddenException(

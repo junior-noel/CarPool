@@ -25,8 +25,8 @@ export class User {
   @Column()
   phoneNumber: string;
 
-  //Defines the user's role in the system., initially passenger
-  @Column({ default: 'passenger' })
+  //Defines the user's role in the system., initially a normal user wth no drver nor passenger acty
+  @Column({ default: 'user' })
   role: string;
 
   // Automatically stores the date and time when the user is created.

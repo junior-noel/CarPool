@@ -18,13 +18,8 @@ export class AuthService {
 
   //function to signup new user
   async signup(signupDto: signupDto) {
-    //extract the requred propertis from the signup request.
     const { firstName, lastName, email, phoneNumber, password } = signupDto;
-
-    // Search the database to determine whether the email is already registered.
     const existingUser = await this.usersService.findByEmail(email);
-
-    // Hash the plain-text password before saving it.
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create and save the user in the PostgreSQL database.
@@ -36,11 +31,10 @@ export class AuthService {
       // Save the hashed password
       password: hashedPassword,
       // Assign the default role from the backend.
-      role: 'passenger',
+      role: 'user',
     });
 
-    // Remove the password from the response object.
-    // The underscore means that we intentionally do not use this variable.
+    // Remove the password from the response object. The underscore means that we intentionally do not use this variable.
     const { password: _, ...userWithoutPassword } = User;
 
     // Return a success message and the user information without the password.
@@ -54,11 +48,8 @@ export class AuthService {
   async login(loginDto: loginDto) {
     // Extract the email and password submitted by the user.
     const { email, password } = loginDto;
-
-    // Search for a user with the supplied email address.
     const user = await this.usersService.findByEmail(email);
 
-    // If no user is found, reject the login request.
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -66,7 +57,6 @@ export class AuthService {
     // with the hashed password stored in the database.
     const passwordMatch = await bcrypt.compare(password, user.password);
 
-    // If the passwords do not match, reject the login request.
     if (!passwordMatch) {
       throw new UnauthorizedException('Invalid email or password');
     }

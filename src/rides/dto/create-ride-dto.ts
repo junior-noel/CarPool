@@ -6,41 +6,61 @@ import {
   IsNumber,
   IsInt,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateRideDto {
-  // Place where the ride starts.
+  @ApiProperty({
+    description: 'Starting location of the ride',
+  })
   @IsString()
   @IsNotEmpty()
   origin: string;
 
-  // Place where the ride ends.
+  @ApiProperty({
+    description: 'Place where the ride ends.',
+  })
   @IsString()
   @IsNotEmpty()
   destination: string;
 
-  // Date of the ride.
-  // Example: "2026-10-05"
+  @ApiProperty({
+    description: 'Date on which the ride will depart',
+    example: '2026-10-15',
+    format: 'date',
+  })
   @IsDateString()
   departureDate: string;
 
-  // Time of the ride.
-  // Example: "08:30"
+  @ApiProperty({
+    description: 'Departure time of the ride',
+  })
   @IsString()
   @IsNotEmpty()
   departureTime: string;
 
-  // Number of seats the driver makes available
-  // for passengers.
+  @ApiProperty({
+    description: 'Number of passenger seats available for the ride',
+    minimum: 1,
+  })
   @IsInt()
   @Min(1)
   availableSeats: number;
 
-  // Price charged for one passenger seat.
+  @ApiProperty({
+    description: ' Price charged for one passenger seat.',
+  })
   @IsNumber()
   @Min(0)
   pricePerSeat: number;
 
-  // Vehicle selected for this ride.
+  @ApiProperty({
+    description: 'Vehicle selected for this ride.',
+    minimum: 1,
+  })
+  @ApiProperty({
+    description: 'ID of the vehicle that will be used for the ride',
+    minimum: 1,
+  })
   @IsInt()
   @Min(1)
   vehicleId: number;

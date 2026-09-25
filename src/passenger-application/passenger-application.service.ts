@@ -122,7 +122,7 @@ export class PassengerApplicationService {
   }
 
   async isPassengerApproved(userId: number): Promise<boolean>{
-    const applcation = this.applicationRepository.findOne({
+    const application = await this.applicationRepository.findOne({
       where: {
         user: {
           id: userId,
@@ -131,6 +131,10 @@ export class PassengerApplicationService {
       }
     });
 
-    return !!applcation;
+  // Temporary debugging.
+  console.log('Checking passenger application for user:', userId);
+  console.log('Found application:', application);
+
+    return !!application;
   }
 }
