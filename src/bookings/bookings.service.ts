@@ -293,4 +293,46 @@ export class BookingService {
       },
     };
   }
+
+    //Reject PENDING bookng
+  async rejectBooking(driverId: number, bookingId: number): Promise<any> {
+    // Find the booking together with the passenger and ride information.
+    const booking = await this.bookingRepository.findOne({
+      where: {
+        id: bookingId,
+      },
+      relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    // Only pending bookings can be rejected.
+    if (booking.status !== BookingStatus.PENDING) {
+      throw new ConflictException(
+        `Booking cannot be rejected because its current status is "${booking.status}"`,
+      );
+    }
+
+    // Make sure the authenticated driver owns the ride.
+    if (booking.ride.driver.id !== driverId) {
+      throw new ConflictException( 'You can only reject bookings for your own rides',);
+    }
+
+    // Change the booking status to rejected.
+    booking.status = BookingStatus.REJECTED;
+
+    await this.bookingRepository.save(booking);
+
+    // Return the booking without exposing password information.
+    return {
+      ...booking,
+      passenger: this.sanitizeUser(booking.passenger),
+      ride: {
+        ...booking.ride,
+        driver: this.sanitizeUser(booking.ride.driver),
+      },
+    };
+  }
 }

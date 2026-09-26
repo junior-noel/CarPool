@@ -5,7 +5,7 @@ import {
   Param,
   Post,
   Req,
-    UseGuards,
+  UseGuards,
   Patch
 } from '@nestjs/common';
 
@@ -100,7 +100,7 @@ export class BookingController {
 
   @ApiOperation({
     summary: 'Approve a bookng',
-    description:'',
+    description: '',
   })
   @UseGuards(JwtAuthGuard, DriverGuard)
   @Patch(':id/approve')
@@ -112,5 +112,29 @@ export class BookingController {
     const driverId = Number(request.user.userId);
 
     return this.bookingService.approveBooking(driverId, bookingId);
+  }
+
+  @ApiOperation({
+    summary: 'Reject a booking',
+    description:
+      'Allows the driver who owns the ride to reject a pending booking. Rejecting a booking does not change the ride seat availability.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID of the booking to reject',
+    example: 2,
+    type: Number,
+  })
+  @ApiOkResponse({
+    description: 'Booking successfully rejected',
+    type: Booking,
+  })
+  @UseGuards(JwtAuthGuard, DriverGuard)
+  @Patch(':id/reject')
+  rejectBooking(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    const bookingId = Number(id);
+    const driverId = Number(request.user.userId);
+
+    return this.bookingService.rejectBooking(driverId, bookingId);
   }
 }
