@@ -22,6 +22,7 @@ import { BookingService } from './bookings.service.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
 import { Booking } from './booking.entity.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+
 import { PassengerGuard } from '../passenger-application/guards/passenger.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 import { DriverGuard } from '../auth/guards/driver.guard.js';
@@ -122,7 +123,6 @@ export class BookingController {
   @ApiParam({
     name: 'id',
     description: 'ID of the booking to reject',
-    example: 2,
     type: Number,
   })
   @ApiOkResponse({
@@ -136,5 +136,33 @@ export class BookingController {
     const driverId = Number(request.user.userId);
 
     return this.bookingService.rejectBooking(driverId, bookingId);
+  }
+
+  @ApiOperation({
+    summary: 'Cancel a booking',
+    description:
+      'Allows a passenger to cancel their own pending or approved booking. Cancelling an approved booking returns the reserved seats to the ride.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID of the booking to cancel',
+    example: 1,
+    type: Number,
+  })
+  @ApiOkResponse({
+    description: 'Booking successfully cancelled',
+    type: Booking,
+  })
+  @UseGuards(JwtAuthGuard, PassengerGuard)
+  @Patch(':id/cancel')
+  cancelBooking(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    // Convert the URL parameter from string to number.
+    const bookingId = Number(id);
+
+    // Get the authenticated user's ID from the JWT.
+    const userId = Number(request.user.userId);
+
+    // Pass both IDs to the service.
+    return this.bookingService.cancelBooking(userId, bookingId);
   }
 }

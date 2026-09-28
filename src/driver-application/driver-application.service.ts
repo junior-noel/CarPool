@@ -75,7 +75,7 @@ export class DriverApplicationService{
         }
 
         //Change the applcaton role to drver
-        applcation.user.role = 'driiver';
+        applcation.user.role = 'driver';
 
         //save the updated user
         await this.userService.updateRole(

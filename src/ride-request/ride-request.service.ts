@@ -20,6 +20,17 @@ export class RideRequestService {
     private readonly userService: UserService,
   ) {}
 
+  // Remove sensitive information before returning a user in an API response
+  private sanitizeUser(user: any) {
+    if (!user) {
+      return user;
+    }
+    // Extract the password and keep everything else
+    const { password, ...safeUser } = user;
+
+    return safeUser;
+  }
+
   //Creates a new ride request for a passenger.
   async create(
     userId: number,
@@ -32,44 +43,41 @@ export class RideRequestService {
       throw new NotFoundException('User not found');
     }
 
-// A RideRequest may optionally be linked to an existing Ride.
-// If rideId is provided, the passenger wants to requesta seat on that specific ride.
-// If rideId is not provided, this is a general request looking for a suitable driver/ride.
-let ride: Ride | null = null;
+    // A RideRequest may optionally be linked to an existing Ride.
+    // If rideId is provided, the passenger wants to requesta seat on that specific ride.
+    // If rideId is not provided, this is a general request looking for a suitable driver/ride.
+    let ride: Ride | null = null;
 
-if (createRideRequestDto.rideId) {
-  ride = await this.rideRepository.findOne({
-    where: {
-      id: createRideRequestDto.rideId,
-    },
-  });
+    if (createRideRequestDto.rideId) {
+      ride = await this.rideRepository.findOne({
+        where: {
+          id: createRideRequestDto.rideId,
+        },
+      });
 
-  // The passenger cannot request a ride that does not exist.
-  if (!ride) {
-    throw new NotFoundException('Ride not found');
-  }
-}
+      // The passenger cannot request a ride that does not exist.
+      if (!ride) {
+        throw new NotFoundException('Ride not found');
+      }
+    }
 
-// Create the RideRequest.
-const rideRequest = this.rideRequestRepository.create({
-  origin: createRideRequestDto.origin,
-  destination: createRideRequestDto.destination,
-  departureDate: new Date(
-    createRideRequestDto.departureDate,
-  ),
-  preferredTime: createRideRequestDto.preferredTime,
-  seatsNeeded: createRideRequestDto.seatsNeeded,
-  passenger,
-  ride,
-});
+    // Create the RideRequest.
+    const rideRequest = this.rideRequestRepository.create({
+      origin: createRideRequestDto.origin,
+      destination: createRideRequestDto.destination,
+      departureDate: new Date(createRideRequestDto.departureDate),
+      preferredTime: createRideRequestDto.preferredTime,
+      seatsNeeded: createRideRequestDto.seatsNeeded,
+      passenger,
+      ride,
+    });
 
-return this.rideRequestRepository.save(rideRequest);
-
+    return this.rideRequestRepository.save(rideRequest);
   }
 
-  //Return all rdeRequest stll waitng for a drver
-  async findOpenRequests(): Promise<RideRequest[]> {
-    return this.rideRequestRepository.find({
+  // Return all ride requests still waiting for a driver
+  async findOpenRequests(): Promise<any[]> {
+    const requests = await this.rideRequestRepository.find({
       where: {
         status: RideRequestStatus.OPEN,
       },
@@ -78,5 +86,10 @@ return this.rideRequestRepository.save(rideRequest);
         createdAt: 'DESC',
       },
     });
+
+    return requests.map((request) => ({
+      ...request,
+      passenger: this.sanitizeUser(request.passenger),
+    }));
   }
 }

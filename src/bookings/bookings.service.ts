@@ -7,13 +7,9 @@ import {
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-
 import { Booking, BookingStatus } from './booking.entity.js';
-
 import { CreateBookingDto } from './dto/create-booking.dto.js';
-
 import { UserService } from '../users/user.service.js';
-
 import { Ride } from '../rides/ride.entity.js';
 
 @Injectable()
@@ -294,7 +290,7 @@ export class BookingService {
     };
   }
 
-    //Reject PENDING bookng
+  //Reject PENDING bookng
   async rejectBooking(driverId: number, bookingId: number): Promise<any> {
     // Find the booking together with the passenger and ride information.
     const booking = await this.bookingRepository.findOne({
@@ -317,7 +313,9 @@ export class BookingService {
 
     // Make sure the authenticated driver owns the ride.
     if (booking.ride.driver.id !== driverId) {
-      throw new ConflictException( 'You can only reject bookings for your own rides',);
+      throw new ConflictException(
+        'You can only reject bookings for your own rides',
+      );
     }
 
     // Change the booking status to rejected.
@@ -335,4 +333,59 @@ export class BookingService {
       },
     };
   }
+
+  //Cancel PENDING bookng
+  async cancelBooking(userId: number, bookingId: number): Promise<any>{
+    // Find the booking together with the passenger and ride information.
+    const booking = await this.bookingRepository.findOne({
+      where: { id: bookingId },
+      relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+    });
+
+    // Make sure the booking actually exists.
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    // Only the passenger who created the booking can cancel it.
+    if (booking.passenger.id !== userId) {
+      throw new ConflictException('You can only cancel your own bookings');
+    }
+
+    // A booking that has already been rejected or cancelled cannot be cancelled again.
+     if (
+       booking.status === BookingStatus.REJECTED ||
+       booking.status === BookingStatus.CANCELLED
+     ) {
+       throw new ConflictException(
+         `Booking cannot be cancelled because its current status is "${booking.status}"`,
+       );
+    }
+    
+     if (booking.status === BookingStatus.APPROVED) {
+       booking.ride.availableSeat += booking.seats;
+
+       // Save the restored seat availability.
+       await this.rideRepository.save(booking.ride);
+    }
+     // Change the booking status to cancelled.
+  booking.status = BookingStatus.CANCELLED;
+
+  // Save the updated booking.
+  await this.bookingRepository.save(booking);
+
+  // Return the updated booking without exposing the password hash.
+  return {
+    ...booking,
+
+    passenger: this.sanitizeUser(booking.passenger),
+
+    ride: {
+      ...booking.ride,
+      driver: this.sanitizeUser(booking.ride.driver),
+    },
+  };
+  }
+  
 }
+      
