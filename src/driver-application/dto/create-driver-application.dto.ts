@@ -1,4 +1,4 @@
-import { IsDateString, isNotEmpty, IsNotEmpty, IsPhoneNumber, isString, IsString } from 'class-validator';
+import { IsDateString, isNotEmpty, IsNotEmpty, IsPhoneNumber, IsString } from 'class-validator';
 
 export class CreateDriverApplicationDto {
   @IsString()

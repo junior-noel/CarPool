@@ -10,9 +10,12 @@ import { UserService } from '../users/user.service.js';
 import { signupDto } from './dto/signup.dto.js';
 import { User } from '../users/user.entity.js';
 import { loginDto } from './dto/login.dto.js';
+import { error } from 'console';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
+private readonly logger = new Logger(AuthService.name);
   constructor(
     // Inject UsersService so we can access user-related database operations.
     private readonly usersService: UserService,
@@ -25,29 +28,18 @@ export class AuthService {
   async signup(signupDto: signupDto) {
     const { firstName, lastName, email, phoneNumber, password } = signupDto;
 
-    try {
-      const existingUser = await this.usersService.findByEmail(email);
-      if (existingUser) {
-        throw new BadRequestException(
-          'This user is already existing. Thry to login instead',
-        );
-      }
-    } catch (e) {
-            throw new BadRequestException(
-              'This user is already existing. Thry to login instead',
-            );  
+    const existingUser = await this.usersService.findByEmail(email);
+    if (existingUser) {
+      throw new BadRequestException(
+        'This user is already existing. Thry to login instead',
+      );
     }
-
-
 
     try {
       // Create and save the user in the PostgreSQL database.
       const hashedPassword = await bcrypt.hash(password, 10);
       const User = await this.usersService.create({
-        firstName,
-        lastName,
-        email,
-        phoneNumber,
+        firstName, lastName, email, phoneNumber,
         // Save the hashed password
         password: hashedPassword,
         // Assign the default role from the backend.
@@ -61,12 +53,9 @@ export class AuthService {
         user: userWithoutPassword,
       };
     } catch (e) {
-      throw new BadRequestException(
-        'This user is already existing. Thry to login instead',
-      );
+      this.logger.error('User creation failed', e);
+      throw new BadRequestException('Could not register user');
     }
-
-    // Remove the password from the response object. The underscore means that we intentionally do not use this variable.
   }
 
   // This method handles user login.
@@ -102,7 +91,7 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload);
 
     // Remove the password before returning the user information.
-    const { password: _, deletedAt: del,  ...userWithoutPassword } = user;
+    const { password: _, deletedAt: del, ...userWithoutPassword } = user;
 
     // Return the token and safe user information to the client.
     return {

@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
+  Index,
 } from 'typeorm';
 
 // @Entity tells TypeORM that this class represents a database table.
@@ -22,7 +23,8 @@ export class User {
   lastName: string;
 
   //Unique login email
-  @Column({ unique: true })
+  @Index({unique: true})
+  @Column()
   email: string;
 
   @Column()
