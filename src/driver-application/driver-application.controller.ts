@@ -39,6 +39,6 @@ export class DriverApplicationController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch(':id/approve')
   approveApplication(@Param('id') id: string) {
-    return this.driverApplicationService.approve(Number(id));
+    return this.driverApplicationService.approve(id);
   }
 }

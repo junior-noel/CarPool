@@ -49,7 +49,7 @@ export class BookingController {
     @Body() createBookingDto: CreateBookingDto,
     @Req() request: AuthenticatedRequest,
   ) {
-    const userId = Number(request.user.userId);
+    const userId = request.user.userId;
 
     return this.bookingService.create(userId, createBookingDto);
   }
@@ -66,7 +66,7 @@ export class BookingController {
   @UseGuards(JwtAuthGuard, PassengerGuard)
   @Get('my-bookings')
   getMyBookings(@Req() request: AuthenticatedRequest) {
-    const userId = Number(request.user.userId);
+    const userId = request.user.userId;
 
     return this.bookingService.findMyBookings(userId);
   }
@@ -93,8 +93,8 @@ export class BookingController {
     @Param('rideId') rideId: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    const driverId = Number(request.user.userId);
-    const id = Number(rideId);
+    const driverId = request.user.userId;
+    const id = rideId;
 
     return this.bookingService.findBookingsForDriver(driverId, id);
   }
@@ -109,8 +109,8 @@ export class BookingController {
     @Param('id') id: string,
     @Req() request: AuthenticatedRequest,
   ) {
-    const bookingId = Number(id);
-    const driverId = Number(request.user.userId);
+    const bookingId = id;
+    const driverId = request.user.userId;
 
     return this.bookingService.approveBooking(driverId, bookingId);
   }
@@ -132,8 +132,8 @@ export class BookingController {
   @UseGuards(JwtAuthGuard, DriverGuard)
   @Patch(':id/reject')
   rejectBooking(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    const bookingId = Number(id);
-    const driverId = Number(request.user.userId);
+    const bookingId = id;
+    const driverId = request.user.userId;
 
     return this.bookingService.rejectBooking(driverId, bookingId);
   }
@@ -157,10 +157,10 @@ export class BookingController {
   @Patch(':id/cancel')
   cancelBooking(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     // Convert the URL parameter from string to number.
-    const bookingId = Number(id);
+    const bookingId = id;
 
     // Get the authenticated user's ID from the JWT.
-    const userId = Number(request.user.userId);
+    const userId = request.user.userId;
 
     // Pass both IDs to the service.
     return this.bookingService.cancelBooking(userId, bookingId);

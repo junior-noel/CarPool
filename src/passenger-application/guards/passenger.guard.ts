@@ -31,8 +31,9 @@ export class PassengerGuard implements CanActivate {
     }
 
     // Check whether this user has an approved passenger application.
-    const isApproved = await this.passengerApplicationService.isPassengerApproved(
-        Number(user.userId),
+    const isApproved =
+      await this.passengerApplicationService.isPassengerApproved(
+        String(user.userId),
       );
       console.log('PassengerGuard isApproved:', isApproved);
 

@@ -20,8 +20,8 @@ export enum RideStatus {
 
 @Entity('ride')
 export class Ride {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Column()
   totalSeat: number;

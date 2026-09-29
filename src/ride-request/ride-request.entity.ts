@@ -21,8 +21,8 @@ export enum RideRequestStatus {
 @Entity('ride_requests')
 export class RideRequest {
   
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Column()
   origin: string;
@@ -57,12 +57,6 @@ export class RideRequest {
     nullable: false,
   })
   passenger: User;
-
-  // Driver who accepted the request.This is nullable because a newly-created request does not have a driver yet.
-  // @ManyToOne(() => User, {
-  //   nullable: true,
-  // })
-  // driver: User | null;
 
   @ManyToOne(() => Ride, { nullable: true })
   ride: Ride | null;

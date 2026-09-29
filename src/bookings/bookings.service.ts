@@ -42,7 +42,7 @@ export class BookingService {
 
   //Create a new booking for an existing ride.
   async create(
-    userId: number,
+    userId: string,
     createBookingDto: CreateBookingDto,
   ): Promise<any> {
     // Find the authenticated user creating the booking.
@@ -122,7 +122,7 @@ export class BookingService {
   }
 
   //Get all bookings created by the authenticated passenger.
-  async findMyBookings(userId: number): Promise<any[]> {
+  async findMyBookings(userId: string): Promise<any[]> {
     const bookings = await this.bookingRepository.find({
       where: {
         passenger: {
@@ -151,7 +151,7 @@ export class BookingService {
   }
 
   // Get all bookings belonging to a particular ride
-  async findByRide(rideId: number): Promise<any[]> {
+  async findByRide(rideId: string): Promise<any[]> {
     const bookings = await this.bookingRepository.find({
       where: {
         ride: {
@@ -179,8 +179,8 @@ export class BookingService {
    * their own ride.
    */
   async findBookingsForDriver(
-    driverId: number,
-    rideId: number,
+    driverId: string,
+    rideId: string,
   ): Promise<any[]> {
     // First find the ride and its driver.
     const ride = await this.rideRepository.findOne({
@@ -231,7 +231,7 @@ export class BookingService {
   }
 
   //  Approve a pending booking.
-  async approveBooking(driverId: number, bookingId: number): Promise<any> {
+  async approveBooking(driverId: string, bookingId: string): Promise<any> {
     // Find the booking together with its ride and driver.
     const booking = await this.bookingRepository.findOne({
       where: {
@@ -291,7 +291,7 @@ export class BookingService {
   }
 
   //Reject PENDING bookng
-  async rejectBooking(driverId: number, bookingId: number): Promise<any> {
+  async rejectBooking(driverId: string, bookingId: string): Promise<any> {
     // Find the booking together with the passenger and ride information.
     const booking = await this.bookingRepository.findOne({
       where: {
@@ -335,7 +335,7 @@ export class BookingService {
   }
 
   //Cancel PENDING bookng
-  async cancelBooking(userId: number, bookingId: number): Promise<any>{
+  async cancelBooking(userId: string, bookingId: string): Promise<any>{
     // Find the booking together with the passenger and ride information.
     const booking = await this.bookingRepository.findOne({
       where: { id: bookingId },

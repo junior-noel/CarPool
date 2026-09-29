@@ -10,8 +10,8 @@ import { User } from '../users/user.entity.js';
 
 @Entity('vehicles')
 export class Vehicle {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Column()
   make: string;

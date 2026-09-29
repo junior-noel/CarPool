@@ -1,4 +1,4 @@
-import { IsDateString, isNotEmpty, IsNotEmpty, isString, IsString } from 'class-validator';
+import { IsDateString, isNotEmpty, IsNotEmpty, IsPhoneNumber, isString, IsString } from 'class-validator';
 
 export class CreateDriverApplicationDto {
   @IsString()
@@ -8,7 +8,8 @@ export class CreateDriverApplicationDto {
     @IsDateString()
     licenseExpiryDate: Date;
 
-    @IsString()
-    @IsNotEmpty()
-    phoneNumber: string
+    @IsPhoneNumber('CM', {
+       message: 'Enter a valid Cameroon phone number, e.g. 677123456 or +237677123456',
+     })
+     phoneNumber: string;
 }

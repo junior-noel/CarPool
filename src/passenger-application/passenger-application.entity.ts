@@ -20,9 +20,8 @@ export enum PassengerApplicationStatus {
 
 @Entity('passenger_applications')
 export class PassengerApplication {
- 
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @OneToOne(() => User)
   @JoinColumn()

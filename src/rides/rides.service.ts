@@ -29,7 +29,7 @@ export class RidesService {
         private readonly userService: UserService,
     ) { }
 
-    async create(userId: number, createRideDto: CreateRideDto): Promise<any> {
+    async create(userId: string, createRideDto: CreateRideDto): Promise<any> {
         // Find the authenticated user who is creating the ride.
         const driver = await this.userService.findById(userId);
 

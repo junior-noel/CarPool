@@ -29,7 +29,7 @@ export class PassengerApplicationService {
   // Creates a passenger application for the authenticated user.
 
   async create(
-    userId: number,
+    userId: string,
     createDto: CreatePassengerApplicationDto,
   ): Promise<object> {
     const user = await this.userService.findById(userId);
@@ -75,7 +75,7 @@ export class PassengerApplicationService {
     };
   }
 
-  async approve(applicationId: number): Promise<object> {
+  async approve(applicationId: string): Promise<object> {
     // Find the passenger application and load the related user.
     const application = await this.applicationRepository.findOne({
       where: {
@@ -121,19 +121,19 @@ export class PassengerApplicationService {
     };
   }
 
-  async isPassengerApproved(userId: number): Promise<boolean>{
+  async isPassengerApproved(userId: string): Promise<boolean> {
     const application = await this.applicationRepository.findOne({
       where: {
         user: {
           id: userId,
         },
         status: PassengerApplicationStatus.APPROVED,
-      }
+      },
     });
 
-  // Temporary debugging.
-  console.log('Checking passenger application for user:', userId);
-  console.log('Found application:', application);
+    // Temporary debugging.
+    console.log('Checking passenger application for user:', userId);
+    console.log('Found application:', application);
 
     return !!application;
   }

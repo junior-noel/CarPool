@@ -33,5 +33,5 @@ export class CreateRideRequestDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  rideId?: number;
+  rideId?: string;
 }

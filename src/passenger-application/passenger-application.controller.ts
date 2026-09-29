@@ -31,6 +31,6 @@ export class PassengerApplicationController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch(':id/approve')
   approveApplication(@Param('id') id: string) {
-    return this.passengerApplicationService.approve(Number(id));
+    return this.passengerApplicationService.approve(id);
   }
 }

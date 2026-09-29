@@ -1,9 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './user.entity.js';
 import { Repository } from 'typeorm';
 import { createUserDto } from './dto/create-user.dto.js';
-
 
 // @Injectable allows NestJS to create and inject this service
 // wherever it is needed. it marks a class as aproviderthat cian bie manage by Nestjs dependency injection
@@ -18,8 +17,12 @@ export class UserService {
 
   //create a new user in the database
   async create(userData: createUserDto): Promise<User> {
-    const user = this.userRepository.create(userData);
-    return this.userRepository.save(user);
+    try {
+      const user = this.userRepository.create(userData);
+      return this.userRepository.save(user);
+    } catch (e) {
+      throw new BadRequestException('A such user is already existing');
+    }
   }
 
   // Searches for a user using their email address.
@@ -29,21 +32,15 @@ export class UserService {
     });
   }
 
-    // Searches for a user using their ID.
-    async findById(id: number): Promise<User | null> {
-        return this.userRepository.findOne({
-            where: { id }
-        });
+  // Searches for a user using their ID.
+  async findById(id: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { id },
+    });
   }
-  
-  async updateRole(
-    userId: number,
-    role: string
-  ): Promise<void>{
+
+  async updateRole(userId: string, role: string): Promise<void> {
     //update only the user role
-    await this.userRepository.update(
-      userId,
-      {role}
-    )
+    await this.userRepository.update(userId, { role });
   }
 }

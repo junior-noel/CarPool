@@ -5,7 +5,7 @@ import { Request } from 'express';
 export interface AuthenticatedRequest extends Request {
   // Cridengtials of the authenticated user.
   user: {
-    userId: number;
+    userId: string;
     email: string;
     role: string;
   };

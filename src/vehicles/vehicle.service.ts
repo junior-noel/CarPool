@@ -20,7 +20,7 @@ export class VehicleService {
   // Creates a new vehicle belonging to the authenticated user.
   async create(
     CreateVehicleDto: CreateVehicleDto,
-      userId: number,
+      userId: string,
     
   ): Promise<Omit<Vehicle, 'owner'>> {
       // Find the user who is creating the vehicle.

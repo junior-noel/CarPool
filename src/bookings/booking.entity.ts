@@ -32,8 +32,8 @@ export class Booking {
   @ApiProperty({
     description: 'Unique identifier of the booking',
   })
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @ApiProperty({
     description: 'Number of seats requested by the passenger',

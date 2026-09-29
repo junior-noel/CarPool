@@ -19,7 +19,7 @@ export class DriverApplicationService{
     ) { }
     
     async create(
-        userId: number,
+        userId: string,
         createDto: CreateDriverApplicationDto,
     ): Promise<DriverApplication> {
 
@@ -57,7 +57,7 @@ export class DriverApplicationService{
         return this.applicationRepository.save(applcation);
     }
 
-    async approve(applcationId: number): Promise<DriverApplication>{
+    async approve(applcationId: string): Promise<DriverApplication>{
       //find the driver applicaton
       const applcation = await this.applicationRepository.findOne({
         where: { id: applcationId },

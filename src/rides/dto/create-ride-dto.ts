@@ -7,6 +7,7 @@ import {
   IsInt,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsUUID } from 'class-validator';
 
 export class CreateRideDto {
   @ApiProperty({
@@ -61,7 +62,6 @@ export class CreateRideDto {
     description: 'ID of the vehicle that will be used for the ride',
     minimum: 1,
   })
-  @IsInt()
-  @Min(1)
-  vehicleId: number;
+  @IsUUID()
+  vehicleId: string;
 }

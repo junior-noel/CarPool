@@ -19,8 +19,8 @@ export enum DriverApplicationStatus {
 
 @Entity('driver_applications')
 export class DriverApplication {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   //just for simplicity wll later change it to 1- 0..*
   // Each driver application belongs to one user.

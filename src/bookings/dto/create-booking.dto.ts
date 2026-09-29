@@ -10,7 +10,7 @@ export class CreateBookingDto {
   @IsInt()
   @IsPositive()
   @IsNotEmpty()
-  rideId: number;
+  rideId: string;
 
   @ApiProperty({
     description: 'Number of seats the passenger wants to reserve',
