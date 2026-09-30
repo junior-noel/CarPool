@@ -4,14 +4,31 @@ import { CreateVehicleDto } from '../vehicles/dto/create-vehicle.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 import { DriverGuard } from '../auth/guards/driver.guard.js';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Vehicle } from './vehicle.entity.js';
 
 @ApiTags('Vehicle')
-  @ApiBearerAuth()
+@ApiBearerAuth()
 @Controller('vehicle')
 export class VehicleController {
   constructor(private readonly vehicleService: VehicleService) {}
 
+  @ApiOperation({
+    summary: 'Create a Vehicle',
+    description:
+      'Allows an approved Driver to create a vehicle.',
+  })
+  @ApiCreatedResponse({
+    description: 'Vehicle created successfully',
+    type: Vehicle,
+  })
   @UseGuards(JwtAuthGuard, DriverGuard)
   @Post()
   createVehicle(

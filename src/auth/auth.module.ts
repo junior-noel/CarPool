@@ -7,12 +7,13 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { UserModule } from '../users/user.module.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
+import { EmailModule } from '../email/email.module.js';
 
 @Module({
   imports: [
     // Import UserModule so AuthService can use UsersService.
     UserModule,
-
+    EmailModule,
     // Provides Passport functionality required by AuthGuard('jwt').
     PassportModule.register({
       defaultStrategy: 'jwt',

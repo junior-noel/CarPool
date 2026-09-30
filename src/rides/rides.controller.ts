@@ -4,7 +4,15 @@ import { CreateRideDto } from './dto/create-ride-dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { DriverGuard } from '../auth/guards/driver.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Ride } from './ride.entity.js';
 
 @ApiTags('Rides')
   @ApiBearerAuth()
@@ -12,6 +20,14 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 export class RidesController {
   constructor(private readonly ridesService: RidesService) {}
 
+  @ApiOperation({
+    summary: 'create a ride',
+    description: 'Allows approved driver to create a ride for a specific vehicle'
+  })
+  @ApiCreatedResponse({
+    description: 'Ride created successfully',
+    type: Ride
+    })
   // Only authenticated users with the driver role
   // can create a ride.
   @UseGuards(JwtAuthGuard, DriverGuard)

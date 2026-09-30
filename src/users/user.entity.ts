@@ -23,7 +23,7 @@ export class User {
   lastName: string;
 
   //Unique login email
-  @Index({unique: true})
+  @Index({ unique: true })
   @Column()
   email: string;
 
@@ -47,4 +47,9 @@ export class User {
 
   @DeleteDateColumn()
   deletedAt: Date;
+
+  //for otp
+  // Indicates whether the user has successfully verified their email.
+  @Column({ default: false })
+  emailVerified: boolean;
 }
