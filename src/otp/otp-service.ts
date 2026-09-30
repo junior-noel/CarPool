@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'node:crypto';
 
 import { Otp } from './otp-entity.js';
 import { OtpPurpose } from './otp-purpose.enum.js';
@@ -20,7 +21,7 @@ export class OtpService {
 
   // Generates a random 6-digit OTP.
   private generateOtpCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return randomInt(0, 1_000_000).toString().padStart(6, '0');
   }
 
   // Creates a new OTP for a specific user and purpose.
@@ -79,7 +80,6 @@ export class OtpService {
     code: string,
     purpose: OtpPurpose,
   ): Promise<boolean> {
-      
     // Find the latest unused OTP for this user and purpose.
     const otp = await this.otpRepository.findOne({
       where: {

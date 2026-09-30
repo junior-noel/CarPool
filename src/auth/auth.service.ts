@@ -4,24 +4,30 @@ import {
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
+
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+
 import { UserService } from '../users/user.service.js';
 import { signupDto } from './dto/signup.dto.js';
 import { User } from '../users/user.entity.js';
 import { loginDto } from './dto/login.dto.js';
-import { error } from 'console';
 import { Logger } from '@nestjs/common';
+
+import { OtpService } from '../otp/otp-service.js';
+import { OtpPurpose } from '../otp/otp-purpose.enum.js';
+import { EmailService } from '../email/email.service.js';
 
 @Injectable()
 export class AuthService {
-private readonly logger = new Logger(AuthService.name);
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     // Inject UsersService so we can access user-related database operations.
     private readonly usersService: UserService,
-
     // Inject JwtService so we can generate JWT access tokens during login.
     private readonly jwtService: JwtService,
+    private readonly otpService: OtpService,
+    private readonly emailService: EmailService,
   ) {}
 
   //function to signup new user
@@ -35,27 +41,43 @@ private readonly logger = new Logger(AuthService.name);
       );
     }
 
-    try {
+    //try {
       // Create and save the user in the PostgreSQL database.
       const hashedPassword = await bcrypt.hash(password, 10);
-      const User = await this.usersService.create({
-        firstName, lastName, email, phoneNumber,
+      const user = await this.usersService.create({
+        firstName,
+        lastName,
+        email,
+        phoneNumber,
         // Save the hashed password
         password: hashedPassword,
         // Assign the default role from the backend.
         role: 'user',
       });
-      const { password: _, ...userWithoutPassword } = User;
+
+      // Generate a verification OTP for the newly created user.
+      const { code } = await this.otpService.createOtp(
+        user,
+        OtpPurpose.EMAIL_VERIFICATION,
+      );
+
+      // Send the OTP to the user's email address.
+      await this.emailService.sendOtpEmail(
+        user.email,
+        code,
+        OtpPurpose.EMAIL_VERIFICATION,
+      );
 
       // Return a success message and the user information without the password.
       return {
-        message: 'User registered successfully',
-        user: userWithoutPassword,
+        message:
+          'Registration successful. Please check your email for the verification code.',
+        user: this.sanitizeUser(user),
       };
-    } catch (e) {
-      this.logger.error('User creation failed', e);
-      throw new BadRequestException('Could not register user');
-    }
+    // } catch (e) {
+    //   this.logger.error('User creation failed', e);
+    //   throw new BadRequestException('Could not register user');
+    // }
   }
 
   // This method handles user login.
@@ -99,5 +121,16 @@ private readonly logger = new Logger(AuthService.name);
       accessToken,
       user: userWithoutPassword,
     };
+  }
+
+  private sanitizeUser(user: any) {
+    if (!user) {
+      return user;
+    }
+
+    // Extract the password and keep everything else.
+    const { password, ...safeUser } = user;
+
+    return safeUser;
   }
 }

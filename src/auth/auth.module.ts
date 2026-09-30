@@ -8,12 +8,14 @@ import { AuthService } from './auth.service.js';
 import { UserModule } from '../users/user.module.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { EmailModule } from '../email/email.module.js';
-
+import { OtpModule } from '../otp/otp-module.js';
+import { OtpService } from '../otp/otp-service.js';
 @Module({
   imports: [
     // Import UserModule so AuthService can use UsersService.
     UserModule,
     EmailModule,
+    OtpModule,
     // Provides Passport functionality required by AuthGuard('jwt').
     PassportModule.register({
       defaultStrategy: 'jwt',
@@ -45,6 +47,6 @@ import { EmailModule } from '../email/email.module.js';
   providers: [AuthService, JwtStrategy],
 
   // Make AuthService available to other modules.
-  exports: [AuthService],
+  exports: [AuthService,],
 })
 export class AuthModule {}

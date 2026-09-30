@@ -1,10 +1,15 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class EmailService {
   // Nodemailer transporter responsible for connecting to the email provider's SMTP server.
   private readonly transporter;
+  private readonly logger = new Logger(EmailService.name);
 
   constructor() {
     this.transporter = nodemailer.createTransport({
@@ -79,11 +84,10 @@ export class EmailService {
       });
     } catch (error) {
       // We don't expose the SMTP error directly to the client.
-      console.error('Failed to send OTP email:', error);
-
-      throw new InternalServerErrorException(
-        'Unable to send verification email',
-      );
+       this.logger.error('Failed to send OTP email', error);
+       throw new InternalServerErrorException(
+         'Unable to send verification email. Please try again later.',
+       );
     }
   }
 }

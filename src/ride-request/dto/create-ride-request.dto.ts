@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsInt,
   IsOptional,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateRideRequestDto {
@@ -31,7 +32,6 @@ export class CreateRideRequestDto {
   // If provided, the passenger is requesting a specific existing ride.
   // If omitted, this is a general request for a driver to fulfill.
   @IsOptional()
-  @IsInt()
-  @Min(1)
+  @IsUUID()
   rideId?: string;
 }

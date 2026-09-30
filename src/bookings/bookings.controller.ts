@@ -6,7 +6,7 @@ import {
   Post,
   Req,
   UseGuards,
-  Patch
+  Patch,
 } from '@nestjs/common';
 
 import {
@@ -80,8 +80,8 @@ export class BookingController {
   @ApiParam({
     name: 'rideId',
     description: 'ID of the ride',
-    example: 3,
-    type: Number,
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    type: String,
   })
   @ApiOkResponse({
     description: 'Bookings for the ride retrieved successfully',
@@ -123,7 +123,8 @@ export class BookingController {
   @ApiParam({
     name: 'id',
     description: 'ID of the booking to reject',
-    type: Number,
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    type: String,
   })
   @ApiOkResponse({
     description: 'Booking successfully rejected',
@@ -146,8 +147,8 @@ export class BookingController {
   @ApiParam({
     name: 'id',
     description: 'ID of the booking to cancel',
-    example: 1,
-    type: Number,
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    type: String,
   })
   @ApiOkResponse({
     description: 'Booking successfully cancelled',

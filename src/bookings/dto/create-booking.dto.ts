@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsPositive } from 'class-validator';
+import { IsInt, IsNotEmpty, IsPositive, IsUUID } from 'class-validator';
 
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -7,8 +7,7 @@ export class CreateBookingDto {
     description: 'ID of the ride the passenger wants to book',
     minimum: 1,
   })
-  @IsInt()
-  @IsPositive()
+  @IsUUID()
   @IsNotEmpty()
   rideId: string;
 
