@@ -17,6 +17,9 @@ import { Logger } from '@nestjs/common';
 import { OtpService } from '../otp/otp-service.js';
 import { OtpPurpose } from '../otp/otp-purpose.enum.js';
 import { EmailService } from '../email/email.service.js';
+import { VerifyOtpDto } from './dto/verify-otp.dto.js';
+
+const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
 
 @Injectable()
 export class AuthService {
@@ -42,42 +45,78 @@ export class AuthService {
     }
 
     //try {
-      // Create and save the user in the PostgreSQL database.
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await this.usersService.create({
-        firstName,
-        lastName,
-        email,
-        phoneNumber,
-        // Save the hashed password
-        password: hashedPassword,
-        // Assign the default role from the backend.
-        role: 'user',
-      });
+    // Create and save the user in the PostgreSQL database.
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await this.usersService.create({
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      // Save the hashed password
+      password: hashedPassword,
+      // Assign the default role from the backend.
+      role: 'user',
+    });
 
-      // Generate a verification OTP for the newly created user.
-      const { code } = await this.otpService.createOtp(
-        user,
-        OtpPurpose.EMAIL_VERIFICATION,
-      );
+    // Generate a verification OTP for the newly created user.
+    const { code } = await this.otpService.createOtp(
+      user,
+      OtpPurpose.EMAIL_VERIFICATION,
+    );
 
-      // Send the OTP to the user's email address.
-      await this.emailService.sendOtpEmail(
-        user.email,
-        code,
-        OtpPurpose.EMAIL_VERIFICATION,
-      );
+    // Send the OTP to the user's email address.
+    await this.emailService.sendOtpEmail(
+      user.email,
+      code,
+      OtpPurpose.EMAIL_VERIFICATION,
+    );
 
-      // Return a success message and the user information without the password.
-      return {
-        message:
-          'Registration successful. Please check your email for the verification code.',
-        user: this.sanitizeUser(user),
-      };
+    // Return a success message and the user information without the password.
+    return {
+      message:
+        'Registration successful. Please check your email for the verification code.',
+      user: this.sanitizeUser(user),
+    };
     // } catch (e) {
     //   this.logger.error('User creation failed', e);
     //   throw new BadRequestException('Could not register user');
     // }
+  }
+
+  async verifyEmail(verifyOtpDto: VerifyOtpDto) {
+    const user = await this.usersService.findByEmail(verifyOtpDto.email);
+
+    if (!user) {
+      this.logger.warn('Email verification rejected: user not found');
+      throw new BadRequestException(INVALID_VERIFICATION_MESSAGE);
+    }
+
+    if (user.emailVerified) {
+      this.logger.warn('Email verification rejected: email already verified');
+      throw new BadRequestException(INVALID_VERIFICATION_MESSAGE);
+    }
+
+    try {
+      await this.otpService.verifyOtp(
+        user,
+        verifyOtpDto.otp,
+        OtpPurpose.EMAIL_VERIFICATION,
+      );
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ConflictException
+      ) {
+        this.logger.warn(`Email verification rejected: ${error.message}`);
+        throw new BadRequestException(INVALID_VERIFICATION_MESSAGE);
+      }
+
+      throw error;
+    }
+
+    await this.usersService.markEmailVerified(user.id);
+
+    return { message: 'Email verified successfully.' };
   }
 
   // This method handles user login.
