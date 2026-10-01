@@ -43,6 +43,11 @@ export class UserService {
     await this.userRepository.update(userId, { emailVerified: true });
   }
 
+  // Persist a bcrypt-hashed password for an existing user.
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.userRepository.update(userId, { password: passwordHash });
+  }
+
   async updateRole(userId: string, role: string): Promise<void> {
     //update only the user role
     await this.userRepository.update(userId, { role });

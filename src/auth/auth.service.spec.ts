@@ -3,9 +3,11 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { validate } from 'class-validator';
 import type { UserService } from '../users/user.service.js';
 import type { OtpService } from '../otp/otp-service.js';
 import type { EmailService } from '../email/email.service.js';
@@ -13,6 +15,7 @@ import { OtpPurpose } from '../otp/otp-purpose.enum.js';
 import { Otp } from '../otp/otp-entity.js';
 import { User } from '../users/user.entity.js';
 import { AuthService } from './auth.service.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
 
@@ -22,7 +25,9 @@ function createAuthService() {
   const findByEmail = vi.fn();
   const createUser = vi.fn();
   const markEmailVerified = vi.fn();
+  const updatePassword = vi.fn();
   const verifyOtp = vi.fn();
+  const invalidateUnusedForUserAndPurpose = vi.fn();
   const prepareOtp = vi.fn();
   const persistOtp = vi.fn();
   const findLatestForUserAndPurpose = vi.fn();
@@ -34,10 +39,12 @@ function createAuthService() {
       findByEmail,
       create: createUser,
       markEmailVerified,
+      updatePassword,
     } as unknown as UserService,
     { signAsync } as unknown as JwtService,
     {
       verifyOtp,
+      invalidateUnusedForUserAndPurpose,
       prepareOtp,
       persistOtp,
       findLatestForUserAndPurpose,
@@ -51,7 +58,9 @@ function createAuthService() {
     findByEmail,
     createUser,
     markEmailVerified,
+    updatePassword,
     verifyOtp,
+    invalidateUnusedForUserAndPurpose,
     prepareOtp,
     persistOtp,
     findLatestForUserAndPurpose,
@@ -445,16 +454,34 @@ describe('AuthService.forgotPassword', () => {
     hourlyCount: number;
     emailError?: Error;
   }> = [
-    { name: 'eligible account', user: verifiedUser, latestOtp: null, hourlyCount: 0 },
+    {
+      name: 'eligible account',
+      user: verifiedUser,
+      latestOtp: null,
+      hourlyCount: 0,
+    },
     { name: 'unknown email', user: null, latestOtp: null, hourlyCount: 0 },
-    { name: 'unverified account', user: unverifiedUser, latestOtp: null, hourlyCount: 0 },
+    {
+      name: 'unverified account',
+      user: unverifiedUser,
+      latestOtp: null,
+      hourlyCount: 0,
+    },
     {
       name: 'cooldown active',
       user: verifiedUser,
-      latestOtp: { ...resetOtp, createdAt: new Date(Date.now() - 30 * 1000) } as Otp,
+      latestOtp: {
+        ...resetOtp,
+        createdAt: new Date(Date.now() - 30 * 1000),
+      } as Otp,
       hourlyCount: 1,
     },
-    { name: 'hourly cap reached', user: verifiedUser, latestOtp: null, hourlyCount: 5 },
+    {
+      name: 'hourly cap reached',
+      user: verifiedUser,
+      latestOtp: null,
+      hourlyCount: 5,
+    },
     {
       name: 'SMTP failure',
       user: verifiedUser,
@@ -546,6 +573,149 @@ describe('AuthService.forgotPassword', () => {
       OtpPurpose.PASSWORD_RESET,
       expect.any(Date),
     );
+  });
+});
+
+describe('AuthService.resetPassword', () => {
+  const oldPassword = 'OldPassword123!';
+  const newPassword = 'NewPassword456!';
+  const dto = {
+    email: 'verified@example.com',
+    otp: '001234',
+    newPassword,
+  };
+  const resetUser = {
+    id: 'reset-user-id',
+    firstName: 'Reset',
+    lastName: 'User',
+    email: dto.email,
+    password: '',
+    phoneNumber: '+237677123456',
+    role: 'user',
+    emailVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as User;
+
+  it('changes the password, consumes reset codes, and allows login with the new password', async () => {
+    const mocks = createAuthService();
+    resetUser.password = await bcrypt.hash(oldPassword, 4);
+    mocks.findByEmail.mockResolvedValue(resetUser);
+    mocks.verifyOtp.mockResolvedValue(true);
+    mocks.updatePassword.mockImplementation(
+      async (_userId: string, passwordHash: string) => {
+        resetUser.password = passwordHash;
+      },
+    );
+    mocks.invalidateUnusedForUserAndPurpose.mockResolvedValue(undefined);
+    mocks.signAsync.mockResolvedValue('login-jwt');
+
+    const response = await mocks.authService.resetPassword(dto);
+
+    expect(response).toEqual({
+      message: 'Password reset successfully. Please log in.',
+    });
+    expect(mocks.verifyOtp).toHaveBeenCalledWith(
+      resetUser,
+      dto.otp,
+      OtpPurpose.PASSWORD_RESET,
+    );
+    expect(mocks.updatePassword).toHaveBeenCalledWith(
+      resetUser.id,
+      expect.any(String),
+    );
+    expect(await bcrypt.compare(newPassword, resetUser.password)).toBe(true);
+    expect(await bcrypt.compare(oldPassword, resetUser.password)).toBe(false);
+    expect(mocks.invalidateUnusedForUserAndPurpose).toHaveBeenCalledWith(
+      resetUser.id,
+      OtpPurpose.PASSWORD_RESET,
+    );
+    expect(mocks.updatePassword.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.invalidateUnusedForUserAndPurpose.mock.invocationCallOrder[0],
+    );
+    expect(mocks.signAsync).not.toHaveBeenCalled();
+
+    await expect(
+      mocks.authService.login({ email: dto.email, password: oldPassword }),
+    ).rejects.toThrow(new UnauthorizedException('Invalid email or password'));
+    const loginResult = await mocks.authService.login({
+      email: dto.email,
+      password: newPassword,
+    });
+    expect(loginResult.accessToken).toBe('login-jwt');
+  });
+
+  it('returns the same generic response for invalid, expired, reused, wrong-purpose, and unknown-account requests', async () => {
+    const cases = [
+      { name: 'unknown email', user: null },
+      {
+        name: 'no active OTP',
+        user: resetUser,
+        error: new BadRequestException('No valid OTP was found.'),
+      },
+      {
+        name: 'wrong code',
+        user: resetUser,
+        error: new BadRequestException('Invalid OTP.'),
+      },
+      {
+        name: 'expired code',
+        user: resetUser,
+        error: new BadRequestException('This OTP has expired.'),
+      },
+      {
+        name: 'reused code',
+        user: resetUser,
+        error: new BadRequestException('No valid OTP was found.'),
+      },
+      {
+        name: 'too many attempts',
+        user: resetUser,
+        error: new ConflictException('Too many incorrect attempts.'),
+      },
+      {
+        name: 'email-verification-purpose code',
+        user: resetUser,
+        error: new BadRequestException('No password-reset OTP was found.'),
+      },
+    ];
+    const responses = [];
+
+    for (const testCase of cases) {
+      const mocks = createAuthService();
+      mocks.findByEmail.mockResolvedValue(testCase.user);
+      if (testCase.error) {
+        mocks.verifyOtp.mockRejectedValue(testCase.error);
+      }
+
+      responses.push(
+        await captureFailure(mocks.authService.resetPassword(dto)),
+      );
+      expect(mocks.updatePassword).not.toHaveBeenCalled();
+      expect(mocks.invalidateUnusedForUserAndPurpose).not.toHaveBeenCalled();
+    }
+
+    const expected = {
+      status: 400,
+      body: {
+        message: INVALID_VERIFICATION_MESSAGE,
+        error: 'Bad Request',
+        statusCode: 400,
+      },
+    };
+    expect(responses).toEqual(cases.map(() => expected));
+  });
+
+  it('rejects a weak new password using signup-equivalent validation rules', async () => {
+    const weakDto = Object.assign(new ResetPasswordDto(), {
+      email: 'verified@example.com',
+      otp: '001234',
+      newPassword: 'weak',
+    });
+
+    const errors = await validate(weakDto);
+
+    expect(errors.some((error) => error.property === 'newPassword')).toBe(true);
   });
 });
 

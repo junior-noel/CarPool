@@ -100,6 +100,21 @@ export class OtpService {
     });
   }
 
+  // Invalidate remaining unused OTPs for a completed user-and-purpose flow.
+  async invalidateUnusedForUserAndPurpose(
+    userId: string,
+    purpose: OtpPurpose,
+  ): Promise<void> {
+    await this.otpRepository.update(
+      {
+        user: { id: userId },
+        purpose,
+        used: false,
+      },
+      { used: true },
+    );
+  }
+
   // Verifies an OTP submitted by a user.
 
   async verifyOtp(

@@ -21,6 +21,7 @@ import { EmailService } from '../email/email.service.js';
 import { VerifyOtpDto } from './dto/verify-otp.dto.js';
 import { ResendOtpDto } from './dto/resend-otp.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
 const NEUTRAL_RESEND_RESPONSE = {
@@ -210,7 +211,9 @@ export class AuthService {
 
     // Only persisted password-reset OTPs start this purpose's cooldown.
     if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < 60 * 1000) {
-      this.logger.warn('Password reset request skipped: account cooldown active');
+      this.logger.warn(
+        'Password reset request skipped: account cooldown active',
+      );
       return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
     }
 
@@ -221,7 +224,9 @@ export class AuthService {
     );
 
     if (hourlyCount >= 5) {
-      this.logger.warn('Password reset request skipped: account hourly cap reached');
+      this.logger.warn(
+        'Password reset request skipped: account hourly cap reached',
+      );
       return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
     }
 
@@ -237,6 +242,48 @@ export class AuthService {
 
     await this.otpService.persistOtp(otp);
     return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
+  }
+
+  // Reset a verified account password using only its password-reset-purpose OTP.
+  async resetPassword(resetPasswordDto: ResetPasswordDto) {
+    const user = await this.usersService.findByEmail(resetPasswordDto.email);
+
+    if (!user) {
+      this.logger.warn('Password reset rejected: account not found');
+      throw new BadRequestException(INVALID_VERIFICATION_MESSAGE);
+    }
+
+    if (!user.emailVerified) {
+      this.logger.warn('Password reset rejected: email not verified');
+      throw new BadRequestException(INVALID_VERIFICATION_MESSAGE);
+    }
+
+    try {
+      await this.otpService.verifyOtp(
+        user,
+        resetPasswordDto.otp,
+        OtpPurpose.PASSWORD_RESET,
+      );
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ConflictException
+      ) {
+        this.logger.warn(`Password reset rejected: ${error.message}`);
+        throw new BadRequestException(INVALID_VERIFICATION_MESSAGE);
+      }
+
+      throw error;
+    }
+
+    const passwordHash = await bcrypt.hash(resetPasswordDto.newPassword, 10);
+    await this.usersService.updatePassword(user.id, passwordHash);
+    await this.otpService.invalidateUnusedForUserAndPurpose(
+      user.id,
+      OtpPurpose.PASSWORD_RESET,
+    );
+
+    return { message: 'Password reset successfully. Please log in.' };
   }
 
   // This method handles user login.

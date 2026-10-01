@@ -29,6 +29,7 @@ import { User } from '../users/user.entity.js';
 import { VerifyOtpDto } from './dto/verify-otp.dto.js';
 import { ResendOtpDto } from './dto/resend-otp.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 
 @ApiTags('Signup')
 @Controller('auth')
@@ -134,14 +135,17 @@ export class AuthController {
 
   @ApiOperation({
     summary: 'Request a password reset code',
-    description: 'Requests a password-reset code without disclosing account eligibility.',
+    description:
+      'Requests a password-reset code without disclosing account eligibility.',
   })
   @ApiBody({ type: ForgotPasswordDto })
   @ApiOkResponse({
-    description: 'The same response is returned for every account-level outcome.',
+    description:
+      'The same response is returned for every account-level outcome.',
     schema: {
       example: {
-        message: 'If the account is eligible, a password reset code will be sent.',
+        message:
+          'If the account is eligible, a password reset code will be sent.',
       },
     },
   })
@@ -155,6 +159,33 @@ export class AuthController {
   // Handle a public request without revealing whether the account can reset its password.
   forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
     return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  @ApiOperation({
+    summary: 'Reset account password',
+    description:
+      'Resets a verified account password with its password-reset-purpose OTP.',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiOkResponse({
+    description: 'Password reset successfully. Please log in.',
+    schema: {
+      example: { message: 'Password reset successfully. Please log in.' },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid or expired verification code.',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'The client IP exceeded the password-reset request limit.',
+  })
+  @Throttle({ default: { limit: 20, ttl: 60 * 60 * 1000 } })
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('reset-password')
+  // Keep reset requests public while applying the password-reset IP limit.
+  resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    return this.authService.resetPassword(resetPasswordDto);
   }
 
   // Handles GET /auth/profile.
