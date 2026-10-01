@@ -242,6 +242,112 @@ describe('BookingService.approveBooking', () => {
   });
 });
 
+describe('BookingService.rejectBooking', () => {
+  it('rejects a pending booking without touching ride seats', async () => {
+    const ride = createRide(2);
+    const booking = createBooking('pending-to-reject', ride, 1);
+    const mocks = createService(ride, [booking]);
+
+    const result = await mocks.service.rejectBooking(driverId, booking.id);
+
+    expect(result.status).toBe(BookingStatus.REJECTED);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.REJECTED,
+    );
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.bookingSave).toHaveBeenCalledOnce();
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+    expect(mocks.lockOrder).toEqual(['booking']);
+  });
+
+  it.each([
+    BookingStatus.APPROVED,
+    BookingStatus.REJECTED,
+    BookingStatus.CANCELLED,
+  ])('does not change a booking already in %s', async (status) => {
+    const ride = createRide(2);
+    const booking = createBooking(`cannot-reject-${status}`, ride, 1, status);
+    const mocks = createService(ride, [booking]);
+
+    await expect(
+      mocks.service.rejectBooking(driverId, booking.id),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(status);
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.bookingSave).not.toHaveBeenCalled();
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+    expect(mocks.lockOrder).toEqual(['booking']);
+  });
+
+  it('preserves the ride-driver ownership check', async () => {
+    const ride = createRide(2);
+    ride.driver = { id: 'another-driver-id' } as User;
+    const booking = createBooking('other-drivers-booking', ride, 1);
+    const mocks = createService(ride, [booking]);
+
+    await expect(
+      mocks.service.rejectBooking(driverId, booking.id),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.PENDING,
+    );
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.bookingSave).not.toHaveBeenCalled();
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+  });
+
+  it('rolls back rejection if saving the rejected booking fails', async () => {
+    const ride = createRide(2);
+    const booking = createBooking('reject-save-failure', ride, 1);
+    const mocks = createService(ride, [booking]);
+    mocks.bookingSave.mockRejectedValue(new Error('Booking save failed'));
+
+    await expect(
+      mocks.service.rejectBooking(driverId, booking.id),
+    ).rejects.toThrow('Booking save failed');
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.PENDING,
+    );
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+  });
+
+  it('allows exactly one of reject and approve to win for the same booking', async () => {
+    const ride = createRide(1);
+    const booking = createBooking('reject-approve-race', ride, 1);
+    const mocks = createService(ride, [booking]);
+
+    const results = await Promise.allSettled([
+      mocks.service.rejectBooking(driverId, booking.id),
+      mocks.service.approveBooking(driverId, booking.id),
+    ]);
+
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const failures = results.filter((result) => result.status === 'rejected');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.reason).toBeInstanceOf(ConflictException);
+
+    const finalBooking = mocks.getCommittedState().bookings[0];
+    expect([BookingStatus.REJECTED, BookingStatus.APPROVED]).toContain(
+      finalBooking.status,
+    );
+    if (finalBooking.status === BookingStatus.REJECTED) {
+      expect(mocks.getCommittedState().ride.availableSeat).toBe(1);
+      expect(mocks.rideSave).not.toHaveBeenCalled();
+    } else {
+      expect(mocks.getCommittedState().ride.availableSeat).toBe(0);
+      expect(mocks.rideSave).toHaveBeenCalledOnce();
+    }
+    expect(mocks.lockOrder[0]).toBe('booking');
+    expect(mocks.lockOrder[1]).toBe('booking');
+  });
+});
+
 describe('BookingService.cancelBooking', () => {
   it('restores seats once when cancelling an approved booking', async () => {
     const ride = createRide(1, 2);

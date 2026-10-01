@@ -23,7 +23,7 @@ export class BookingService {
 
     private readonly userService: UserService,
     private readonly dataSource: DataSource,
-  ) { }
+  ) {}
 
   /**
    * Removes sensitive information from a User object
@@ -294,48 +294,45 @@ export class BookingService {
     });
   }
 
-  //Reject PENDING bookng
+  // Reject a pending booking while serializing state changes on its row.
   async rejectBooking(driverId: string, bookingId: string): Promise<any> {
-    // Find the booking together with the passenger and ride information.
-    const booking = await this.bookingRepository.findOne({
-      where: {
-        id: bookingId,
-      },
-      relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+    return this.dataSource.transaction(async (manager) => {
+      const bookingRepository = manager.getRepository(Booking);
+      // Lock before reading status so reject cannot race with approval or cancellation.
+      const booking = await bookingRepository.findOne({
+        where: { id: bookingId },
+        relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!booking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      if (booking.status !== BookingStatus.PENDING) {
+        throw new ConflictException(
+          `Booking cannot be rejected because its current status is "${booking.status}"`,
+        );
+      }
+
+      if (booking.ride.driver.id !== driverId) {
+        throw new ConflictException(
+          'You can only reject bookings for your own rides',
+        );
+      }
+
+      booking.status = BookingStatus.REJECTED;
+      await bookingRepository.save(booking);
+
+      return {
+        ...booking,
+        passenger: this.sanitizeUser(booking.passenger),
+        ride: {
+          ...booking.ride,
+          driver: this.sanitizeUser(booking.ride.driver),
+        },
+      };
     });
-
-    if (!booking) {
-      throw new NotFoundException('Booking not found');
-    }
-
-    // Only pending bookings can be rejected.
-    if (booking.status !== BookingStatus.PENDING) {
-      throw new ConflictException(
-        `Booking cannot be rejected because its current status is "${booking.status}"`,
-      );
-    }
-
-    // Make sure the authenticated driver owns the ride.
-    if (booking.ride.driver.id !== driverId) {
-      throw new ConflictException(
-        'You can only reject bookings for your own rides',
-      );
-    }
-
-    // Change the booking status to rejected.
-    booking.status = BookingStatus.REJECTED;
-
-    await this.bookingRepository.save(booking);
-
-    // Return the booking without exposing password information.
-    return {
-      ...booking,
-      passenger: this.sanitizeUser(booking.passenger),
-      ride: {
-        ...booking.ride,
-        driver: this.sanitizeUser(booking.ride.driver),
-      },
-    };
   }
 
   // Cancel a passenger's booking and restore seats atomically when it was approved.
@@ -405,5 +402,3 @@ export class BookingService {
     });
   }
 }
-
-
