@@ -142,14 +142,20 @@ export class AuthService {
     if (user.emailVerified) {
       this.logger.warn('Verification resend skipped: account already verified');
       return NEUTRAL_RESEND_RESPONSE;
+      // return new BadRequestException(
+      //   'Verification resend skipped: account already verified',);
     }
 
+    // Fetch the most recent email-verification OTP issued to this user.
     const latestOtp = await this.otpService.findLatestForUserAndPurpose(
       user.id,
       OtpPurpose.EMAIL_VERIFICATION,
     );
 
-    // Persisted OTP time records the most recent successful SMTP handoff.
+    // Enforce the 60-second resend cooldown: if the last verification code was issued
+    // less than a minute ago, skip sending a new one. We return the same neutral
+    // response as every other outcome so callers cannot tell whether the account
+    // exists or why no email was sent. The real reason is only logged server-side.
     if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < 60 * 1000) {
       this.logger.warn('Verification resend skipped: account cooldown active');
       return NEUTRAL_RESEND_RESPONSE;
