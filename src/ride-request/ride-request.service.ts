@@ -1,11 +1,31 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { RideRequest, RideRequestStatus } from './ride-request.entity.js';
 import { CreateRideRequestDto } from './dto/create-ride-request.dto.js';
+import { AcceptRideRequestDto } from './dto/accept-ride-request.dto.js';
 import { UserService } from '../users/user.service.js';
-import { Ride } from '../rides/ride.entity.js';
+import { Ride, RideStatus } from '../rides/ride.entity.js';
 import { Booking, BookingStatus } from '../bookings/booking.entity.js';
+
+// Fields drivers may see for open requests.
+export interface OpenRideRequestResponse {
+  id: string;
+  origin: string;
+  destination: string;
+  departureDate: Date;
+  preferredTime: string;
+  seatsNeeded: number;
+  status: RideRequestStatus;
+  rideId: string | null;
+  passenger: { firstName: string };
+}
 
 @Injectable()
 export class RideRequestService {
@@ -23,18 +43,8 @@ export class RideRequestService {
 
     //  UserService allows us to find the authenticated passenger using the ID obtained from the JWT.
     private readonly userService: UserService,
+    private readonly dataSource: DataSource,
   ) {}
-
-  // Remove sensitive information before returning a user in an API response
-  private sanitizeUser(user: any) {
-    if (!user) {
-      return user;
-    }
-    // Extract the password and keep everything else
-    const { password, ...safeUser } = user;
-
-    return safeUser;
-  }
 
   //Creates a new ride request for a passenger.
   async create(
@@ -80,106 +90,177 @@ export class RideRequestService {
     return this.rideRequestRepository.save(rideRequest);
   }
 
-  // Return all ride requests still waiting for a driver
-  async findOpenRequests(): Promise<any[]> {
+  // Return unlinked requests and linked requests eligible for this driver.
+  async findOpenRequests(driverId: string): Promise<OpenRideRequestResponse[]> {
     const requests = await this.rideRequestRepository.find({
       where: {
         status: RideRequestStatus.OPEN,
       },
-      relations: ['passenger'],
+      relations: ['passenger', 'ride', 'ride.driver'],
       order: {
         createdAt: 'DESC',
       },
     });
 
-    return requests.map((request) => ({
-      ...request,
-      passenger: this.sanitizeUser(request.passenger),
-    }));
+    return requests
+      .filter(
+        (request) =>
+          !request.ride ||
+          this.isRideEligibleForDriver(
+            request.ride,
+            driverId,
+            request.seatsNeeded,
+          ),
+      )
+      .map((request) => this.toSafeRequestResponse(request));
   }
 
-  // Allows an approved driver to accept a RideRequest. The Booking is attached to the existing Ride.
-  async acceptRequest(driverId: string, rideRequestId: string): Promise<any> {
-    // Find the RideRequest using its ID.
-    // We also load the passenger and the Ride with its driver.
-    const rideRequest = await this.rideRequestRepository.findOne({
-      where: {
-        id: rideRequestId,
-      },
-      relations: ['passenger', 'ride', 'ride.driver'],
-    });
+  // Check the driver, scheduled state, future departure, and requested seat count.
+  private isRideEligibleForDriver(
+    ride: Ride,
+    driverId: string,
+    seatsNeeded: number,
+  ): boolean {
+    return (
+      ride.driver.id === driverId &&
+      ride.status === RideStatus.SCHEDULED &&
+      this.getDepartureTimestamp(ride) > Date.now() &&
+      ride.availableSeat >= seatsNeeded
+    );
+  }
 
-    // Make sure the RideRequest exists.
-    if (!rideRequest) {
-      throw new NotFoundException('Ride request not found');
-    }
+  // Convert a database date/time pair into a comparable local departure timestamp.
+  private getDepartureTimestamp(ride: Ride): number {
+    const rawDepartureDate = ride.departureDate as Date | string;
+    const departureDate =
+      typeof rawDepartureDate === 'string'
+        ? rawDepartureDate
+        : rawDepartureDate.toISOString().slice(0, 10);
 
-    // Only OPEN requests can be accepted.
-    if (rideRequest.status !== RideRequestStatus.OPEN) {
-      throw new ConflictException(
-        `Ride request cannot be accepted because its current status is "${rideRequest.status}"`,
-      );
-    }
+    return new Date(`${departureDate}T${ride.departureTime}`).getTime();
+  }
 
-    // A general RideRequest without an associated Ride
-    // cannot automatically create a Booking yet.
-    if (!rideRequest.ride) {
-      throw new ConflictException(
-        'This ride request is not associated with a ride yet',
-      );
-    }
-
-    // Make sure the logged-in driver owns the Ride
-    // attached to this RideRequest.
-    if (rideRequest.ride.driver.id !== driverId) {
-      throw new ForbiddenException(
-        'You can only accept ride requests for your own rides',
-      );
-    }
-
-    // Make sure the Ride has enough available seats.
-    if (rideRequest.seatsNeeded > rideRequest.ride.availableSeat) {
-      throw new ConflictException(
-        `The ride does not have enough available seats. Available seats: ${rideRequest.ride.availableSeat}`,
-      );
-    }
-
-    // Calculate the total booking price.
-    const totalPrice = rideRequest.seatsNeeded * Number(rideRequest.ride.seatPerPrice);
-
-    // Automatically create a Booking for the passenger
-    // using the driver's existing Ride.
-    const booking = this.bookingRepository.create({
-      passenger: rideRequest.passenger,
-      ride: rideRequest.ride,
-      seats: rideRequest.seatsNeeded,
-      totalPrice,
-      status: BookingStatus.PENDING,
-    });
-
-    // Save the new Booking.
-    const savedBooking = await this.bookingRepository.save(booking);
-
-    // Mark the RideRequest as accepted.
-    rideRequest.status = RideRequestStatus.ACCEPTED;
-
-    // Save the updated RideRequest.
-    await this.rideRequestRepository.save(rideRequest);
-
-    // Return the accepted request and the newly-created Booking.
+  // Expose request details and passenger first name without contact or credential fields.
+  private toSafeRequestResponse(request: RideRequest) {
     return {
-      message: 'Ride request accepted and booking created successfully',
-
-      rideRequest: {
-        ...rideRequest,
-        passenger: this.sanitizeUser(rideRequest.passenger),
+      id: request.id,
+      origin: request.origin,
+      destination: request.destination,
+      departureDate: request.departureDate,
+      preferredTime: request.preferredTime,
+      seatsNeeded: request.seatsNeeded,
+      status: request.status,
+      rideId: request.ride?.id ?? null,
+      passenger: {
+        firstName: request.passenger.firstName,
       },
-
-      booking: savedBooking,
     };
   }
+
+  // Accept under a request-row lock so only one transaction can create its booking.
+  async acceptRequest(
+    driverId: string,
+    rideRequestId: string,
+    acceptDto: AcceptRideRequestDto,
+  ): Promise<object> {
+    return this.dataSource.transaction(async (manager) => {
+      const rideRequestRepository = manager.getRepository(RideRequest);
+
+      // Lock the request row before checking status; competing acceptors wait for this transaction.
+      const lockedRequest = await rideRequestRepository.findOne({
+        where: { id: rideRequestId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedRequest) {
+        throw new NotFoundException('Ride request not found');
+      }
+
+      if (lockedRequest.status !== RideRequestStatus.OPEN) {
+        throw new ConflictException(
+          `Ride request cannot be accepted because its current status is "${lockedRequest.status}"`,
+        );
+      }
+
+      const rideRequest = await rideRequestRepository.findOne({
+        where: { id: rideRequestId },
+        relations: ['passenger', 'ride', 'ride.driver'],
+      });
+
+      if (!rideRequest) {
+        throw new NotFoundException('Ride request not found');
+      }
+
+      // Recheck after loading relations while the request row remains locked.
+      if (rideRequest.status !== RideRequestStatus.OPEN) {
+        throw new ConflictException(
+          `Ride request cannot be accepted because its current status is "${rideRequest.status}"`,
+        );
+      }
+
+      const rideRepository = manager.getRepository(Ride);
+      let ride = rideRequest.ride;
+
+      if (!ride) {
+        if (!acceptDto.rideId) {
+          throw new BadRequestException(
+            'A rideId is required for an unlinked ride request.',
+          );
+        }
+
+        ride = await rideRepository.findOne({
+          where: { id: acceptDto.rideId },
+          relations: ['driver'],
+        });
+
+        if (!ride) {
+          throw new NotFoundException('Ride not found');
+        }
+      }
+
+      if (ride.driver.id !== driverId) {
+        throw new ForbiddenException(
+          'You can only accept requests for your own rides.',
+        );
+      }
+
+      if (ride.status !== RideStatus.SCHEDULED) {
+        throw new BadRequestException('The selected ride is not open.');
+      }
+
+      if (this.getDepartureTimestamp(ride) <= Date.now()) {
+        throw new BadRequestException('The selected ride is in the past.');
+      }
+
+      if (rideRequest.seatsNeeded > ride.availableSeat) {
+        throw new BadRequestException(
+          'The selected ride does not have enough available seats.',
+        );
+      }
+
+      const totalPrice = rideRequest.seatsNeeded * Number(ride.seatPerPrice);
+      const bookingRepository = manager.getRepository(Booking);
+      const booking = bookingRepository.create({
+        passenger: rideRequest.passenger,
+        ride,
+        seats: rideRequest.seatsNeeded,
+        totalPrice,
+        status: BookingStatus.PENDING,
+      });
+      const savedBooking = await bookingRepository.save(booking);
+
+      // Keep the ride association, booking, and accepted state in this transaction.
+      rideRequest.ride = ride;
+      rideRequest.status = RideRequestStatus.ACCEPTED;
+      await rideRequestRepository.save(rideRequest);
+
+      return {
+        bookingId: savedBooking.id,
+        status: savedBooking.status,
+        rideId: ride.id,
+        requestId: rideRequest.id,
+        seats: savedBooking.seats,
+      };
+    });
+  }
 }
-
-
-
-  

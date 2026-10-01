@@ -1,13 +1,16 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
 } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
 import type { UserService } from '../users/user.service.js';
 import type { OtpService } from '../otp/otp-service.js';
 import type { EmailService } from '../email/email.service.js';
 import { OtpPurpose } from '../otp/otp-purpose.enum.js';
+import { Otp } from '../otp/otp-entity.js';
 import { User } from '../users/user.entity.js';
 import { AuthService } from './auth.service.js';
 
@@ -15,17 +18,45 @@ const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
 
 function createAuthService() {
   const findByEmail = vi.fn();
+  const createUser = vi.fn();
   const markEmailVerified = vi.fn();
   const verifyOtp = vi.fn();
+  const prepareOtp = vi.fn();
+  const persistOtp = vi.fn();
+  const findLatestForUserAndPurpose = vi.fn();
+  const countCreatedSince = vi.fn();
+  const sendOtpEmail = vi.fn();
   const signAsync = vi.fn();
   const authService = new AuthService(
-    { findByEmail, markEmailVerified } as unknown as UserService,
+    {
+      findByEmail,
+      create: createUser,
+      markEmailVerified,
+    } as unknown as UserService,
     { signAsync } as unknown as JwtService,
-    { verifyOtp } as unknown as OtpService,
-    {} as EmailService,
+    {
+      verifyOtp,
+      prepareOtp,
+      persistOtp,
+      findLatestForUserAndPurpose,
+      countCreatedSince,
+    } as unknown as OtpService,
+    { sendOtpEmail } as unknown as EmailService,
   );
 
-  return { authService, findByEmail, markEmailVerified, verifyOtp, signAsync };
+  return {
+    authService,
+    findByEmail,
+    createUser,
+    markEmailVerified,
+    verifyOtp,
+    prepareOtp,
+    persistOtp,
+    findLatestForUserAndPurpose,
+    countCreatedSince,
+    sendOtpEmail,
+    signAsync,
+  };
 }
 
 async function captureFailure(promise: Promise<unknown>) {
@@ -134,5 +165,292 @@ describe('AuthService.verifyEmail', () => {
     };
     expect(responses).toEqual(cases.map(() => expected));
     expect(responses.every((response) => response.status === 400)).toBe(true);
+  });
+});
+
+describe('AuthService.login email verification', () => {
+  const password = 'CorrectPassword123!';
+
+  it('allows a verified user to log in and returns a token', async () => {
+    const mocks = createAuthService();
+    const user = {
+      id: 'verified-user-id',
+      firstName: 'Verified',
+      lastName: 'User',
+      email: 'verified@example.com',
+      password: await bcrypt.hash(password, 4),
+      phoneNumber: '+237677123456',
+      role: 'user',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    } as User;
+    mocks.findByEmail.mockResolvedValue(user);
+    mocks.signAsync.mockResolvedValue('signed-jwt');
+
+    const result = await mocks.authService.login({
+      email: user.email,
+      password,
+    });
+
+    expect(result).toMatchObject({
+      message: 'Login successful',
+      accessToken: 'signed-jwt',
+      user: { id: user.id, email: user.email },
+    });
+    expect(mocks.signAsync).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an unverified user with the correct password without issuing a token', async () => {
+    const mocks = createAuthService();
+    const user = {
+      id: 'unverified-user-id',
+      firstName: 'Unverified',
+      lastName: 'User',
+      email: 'unverified@example.com',
+      password: await bcrypt.hash(password, 4),
+      phoneNumber: '+237677123456',
+      role: 'user',
+      emailVerified: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+    } as User;
+    mocks.findByEmail.mockResolvedValue(user);
+
+    await expect(
+      mocks.authService.login({ email: user.email, password }),
+    ).rejects.toThrow(
+      new ForbiddenException('Please verify your email before logging in.'),
+    );
+    expect(mocks.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps invalid credentials identical for unknown emails and incorrect passwords', async () => {
+    const wrongPassword = 'WrongPassword123!';
+    const cases = [
+      { email: 'missing@example.com', user: null },
+      {
+        email: 'unverified@example.com',
+        user: {
+          email: 'unverified@example.com',
+          id: 'unverified-user-id',
+          firstName: 'Unverified',
+          lastName: 'User',
+          password: await bcrypt.hash(password, 4),
+          phoneNumber: '+237677123456',
+          role: 'user',
+          emailVerified: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          deletedAt: null,
+        } as User,
+      },
+      {
+        email: 'verified@example.com',
+        user: {
+          email: 'verified@example.com',
+          id: 'verified-user-id',
+          firstName: 'Verified',
+          lastName: 'User',
+          password: await bcrypt.hash(password, 4),
+          phoneNumber: '+237677123456',
+          role: 'user',
+          emailVerified: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          deletedAt: null,
+        } as User,
+      },
+    ];
+    const responses = [];
+
+    for (const testCase of cases) {
+      const mocks = createAuthService();
+      mocks.findByEmail.mockResolvedValue(testCase.user);
+
+      try {
+        await mocks.authService.login({
+          email: testCase.email,
+          password: wrongPassword,
+        });
+      } catch (error) {
+        if (error instanceof HttpException) {
+          responses.push({
+            status: error.getStatus(),
+            body: error.getResponse(),
+          });
+          continue;
+        }
+        throw error;
+      }
+
+      throw new Error('Expected login to reject invalid credentials');
+    }
+
+    const expected = {
+      status: 401,
+      body: {
+        message: 'Invalid email or password',
+        error: 'Unauthorized',
+        statusCode: 401,
+      },
+    };
+    expect(responses).toEqual(cases.map(() => expected));
+  });
+});
+
+describe('AuthService.resendVerification', () => {
+  const dto = { email: 'user@example.com' };
+  const user = {
+    id: 'user-id',
+    email: dto.email,
+    emailVerified: false,
+  } as User;
+  const otp = {
+    user,
+    purpose: OtpPurpose.EMAIL_VERIFICATION,
+    codeHash: 'hashed-code',
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    attempts: 0,
+    used: false,
+  } as Otp;
+  const neutralResponse = {
+    message: 'If the account needs verification, a code will be sent.',
+  };
+  const resendScenarios: Array<{
+    name: string;
+    user: User | null;
+    latestOtp: Otp | null;
+    hourlyCount: number;
+    emailError?: Error;
+  }> = [
+    { name: 'eligible account', user, latestOtp: null, hourlyCount: 1 },
+    { name: 'unknown email', user: null, latestOtp: null, hourlyCount: 0 },
+    {
+      name: 'already-verified account',
+      user: { ...user, emailVerified: true } as User,
+      latestOtp: null,
+      hourlyCount: 0,
+    },
+    {
+      name: 'cooldown active',
+      user,
+      latestOtp: {
+        ...otp,
+        createdAt: new Date(Date.now() - 30 * 1000),
+      } as Otp,
+      hourlyCount: 1,
+    },
+    { name: 'hourly cap reached', user, latestOtp: null, hourlyCount: 5 },
+    {
+      name: 'SMTP failure',
+      user,
+      latestOtp: null,
+      hourlyCount: 1,
+      emailError: new Error('SMTP unavailable'),
+    },
+  ];
+
+  // Run one resend scenario with isolated service and dependency mocks.
+  async function runScenario(scenario: (typeof resendScenarios)[number]) {
+    const mocks = createAuthService();
+    mocks.findByEmail.mockResolvedValue(scenario.user);
+    mocks.findLatestForUserAndPurpose.mockResolvedValue(scenario.latestOtp);
+    mocks.countCreatedSince.mockResolvedValue(scenario.hourlyCount);
+    mocks.prepareOtp.mockResolvedValue({ otp, code: '012345' });
+    mocks.persistOtp.mockResolvedValue(otp);
+    if (scenario.emailError) {
+      mocks.sendOtpEmail.mockRejectedValue(scenario.emailError);
+    } else {
+      mocks.sendOtpEmail.mockResolvedValue(undefined);
+    }
+
+    const response = await mocks.authService.resendVerification(dto);
+    return { response, mocks };
+  }
+
+  it('sends before persisting an OTP for an eligible account', async () => {
+    const { response, mocks } = await runScenario(resendScenarios[0]);
+
+    expect(response).toEqual(neutralResponse);
+    expect(mocks.sendOtpEmail).toHaveBeenCalledWith(
+      user.email,
+      '012345',
+      OtpPurpose.EMAIL_VERIFICATION,
+    );
+    expect(mocks.persistOtp).toHaveBeenCalledWith(otp);
+    expect(mocks.sendOtpEmail.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.persistOtp.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(resendScenarios)(
+    '$name returns the neutral response',
+    async (scenario) => {
+      const { response, mocks } = await runScenario(scenario);
+
+      expect(response).toEqual(neutralResponse);
+      if (scenario.emailError) {
+        expect(mocks.persistOtp).not.toHaveBeenCalled();
+      } else if (scenario.name !== 'eligible account') {
+        expect(mocks.sendOtpEmail).not.toHaveBeenCalled();
+        expect(mocks.persistOtp).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('returns an identical response for all account-level outcomes', async () => {
+    const responses = await Promise.all(
+      resendScenarios.map(async (scenario) => {
+        const { response } = await runScenario(scenario);
+        return response;
+      }),
+    );
+
+    expect(responses).toEqual(resendScenarios.map(() => neutralResponse));
+  });
+});
+
+describe('AuthService.signup email delivery', () => {
+  const signupData = {
+    firstName: 'Test',
+    lastName: 'User',
+    email: 'new@example.com',
+    phoneNumber: '+237677123456',
+    password: 'ExamplePass123!',
+  };
+  const user = { id: 'new-user-id', email: signupData.email } as User;
+  const otp = { user, purpose: OtpPurpose.EMAIL_VERIFICATION } as Otp;
+
+  it('persists the OTP after signup email delivery succeeds', async () => {
+    const mocks = createAuthService();
+    mocks.findByEmail.mockResolvedValue(null);
+    mocks.createUser.mockResolvedValue(user);
+    mocks.prepareOtp.mockResolvedValue({ otp, code: '012345' });
+    mocks.sendOtpEmail.mockResolvedValue(undefined);
+    mocks.persistOtp.mockResolvedValue(otp);
+
+    const response = await mocks.authService.signup(signupData);
+
+    expect(response).toMatchObject({
+      message:
+        'Registration successful. Please check your email for the verification code.',
+    });
+    expect(mocks.sendOtpEmail.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.persistOtp.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('leaves no OTP when signup email delivery fails', async () => {
+    const mocks = createAuthService();
+    mocks.findByEmail.mockResolvedValue(null);
+    mocks.createUser.mockResolvedValue(user);
+    mocks.prepareOtp.mockResolvedValue({ otp, code: '012345' });
+    mocks.sendOtpEmail.mockRejectedValue(new Error('SMTP unavailable'));
+
+    await expect(mocks.authService.signup(signupData)).rejects.toThrow();
+    expect(mocks.persistOtp).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'node:crypto';
 
@@ -30,28 +30,21 @@ export class OtpService {
     user: User,
     purpose: OtpPurpose,
   ): Promise<{ otp: Otp; code: string }> {
-    // Invalidate any previous unused OTPs for the same purpose.
-    await this.otpRepository.update(
-      {
-        user: { id: user.id },
-        purpose,
-        used: false,
-      },
-      {
-        used: true,
-      },
-    );
+    const { otp, code } = await this.prepareOtp(user, purpose);
+    return {
+      otp: await this.persistOtp(otp),
+      code,
+    };
+  }
 
-    // Generate a new 6-digit OTP.
+  // Prepare a hashed OTP without saving it, so delivery can happen first.
+  async prepareOtp(
+    user: User,
+    purpose: OtpPurpose,
+  ): Promise<{ otp: Otp; code: string }> {
     const code = this.generateOtpCode();
-
-    // Hash the OTP before storing it.
     const codeHash = await bcrypt.hash(code, 10);
-
-    // OTP will be valid for 10 minutes.
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    // Create the OTP database record.
     const otp = this.otpRepository.create({
       user,
       codeHash,
@@ -61,16 +54,50 @@ export class OtpService {
       used: false,
     });
 
-    // Save the hashed OTP.
-    const savedOtp = await this.otpRepository.save(otp);
+    return { otp, code };
+  }
 
-    // Return both:
-    // - savedOtp: database record
-    // - code: plain OTP that will be sent to the user
-    return {
-      otp: savedOtp,
-      code,
-    };
+  // Save a delivered OTP and invalidate earlier unused codes for that purpose.
+  async persistOtp(otp: Otp): Promise<Otp> {
+    // Invalidate any previous unused OTPs for the same purpose.
+    await this.otpRepository.update(
+      {
+        user: { id: otp.user.id },
+        purpose: otp.purpose,
+        used: false,
+      },
+      {
+        used: true,
+      },
+    );
+
+    return this.otpRepository.save(otp);
+  }
+
+  // Find the newest OTP to calculate a user's resend cooldown.
+  async findLatestForUserAndPurpose(
+    userId: string,
+    purpose: OtpPurpose,
+  ): Promise<Otp | null> {
+    return this.otpRepository.findOne({
+      where: { user: { id: userId }, purpose },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  // Count delivered OTP records within the rolling-hour limit window.
+  async countCreatedSince(
+    userId: string,
+    purpose: OtpPurpose,
+    since: Date,
+  ): Promise<number> {
+    return this.otpRepository.count({
+      where: {
+        user: { id: userId },
+        purpose,
+        createdAt: MoreThanOrEqual(since),
+      },
+    });
   }
 
   // Verifies an OTP submitted by a user.

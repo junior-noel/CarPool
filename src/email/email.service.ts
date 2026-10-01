@@ -53,7 +53,7 @@ export class EmailService {
             : 'Your CarPool verification code',
 
         // Plain-text version of the email.
-        text: `Your CarPool verification code is ${otpCode}. This code expires in 10 minutes.`,
+        text: `Your CarPool email verification code is ${otpCode}. Use it to verify your email address. This code expires in 10 minutes.`,
 
         // HTML version of the email.
         html: `
@@ -84,10 +84,10 @@ export class EmailService {
       });
     } catch (error) {
       // We don't expose the SMTP error directly to the client.
-       this.logger.error('Failed to send OTP email', error);
-       throw new InternalServerErrorException(
-         'Unable to send verification email. Please try again later.',
-       );
+      this.logger.error('Failed to send OTP email', error);
+      throw new InternalServerErrorException(
+        'Unable to send verification email. Please try again later.',
+      );
     }
   }
 }

@@ -18,12 +18,16 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiTooManyRequestsResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { User } from '../users/user.entity.js';
 import { VerifyOtpDto } from './dto/verify-otp.dto.js';
+import { ResendOtpDto } from './dto/resend-otp.dto.js';
 
 @ApiTags('Signup')
 @Controller('auth')
@@ -52,6 +56,9 @@ export class AuthController {
   @ApiOkResponse({
     description: 'Login successfully',
     type: User,
+  })
+  @ApiForbiddenResponse({
+    description: 'Please verify your email before logging in.',
   })
   // Handles POST requests sent to /auth/login.
   @Post('login')
@@ -96,6 +103,32 @@ export class AuthController {
   @Post('verify-email')
   verifyEmail(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authService.verifyEmail(verifyOtpDto);
+  }
+
+  @ApiOperation({
+    summary: 'Resend email verification code',
+    description:
+      'Requests a verification code without disclosing account status.',
+  })
+  @ApiOkResponse({
+    description:
+      'The same response is returned for every account-level outcome.',
+    schema: {
+      example: {
+        message: 'If the account needs verification, a code will be sent.',
+      },
+    },
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'The client IP exceeded the resend request limit.',
+  })
+  @Throttle({ default: { limit: 20, ttl: 60 * 60 * 1000 } })
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('resend-verification')
+  // Resend only verification codes and keep account-level outcomes private.
+  resendVerification(@Body() resendOtpDto: ResendOtpDto) {
+    return this.authService.resendVerification(resendOtpDto);
   }
 
   // Handles GET /auth/profile.

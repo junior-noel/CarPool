@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
@@ -16,6 +17,8 @@ import { OtpService } from '../otp/otp-service.js';
     UserModule,
     EmailModule,
     OtpModule,
+    // These limits apply only to routes guarded with ThrottlerGuard.
+    ThrottlerModule.forRoot([{ ttl: 60 * 60 * 1000, limit: 20 }]),
     // Provides Passport functionality required by AuthGuard('jwt').
     PassportModule.register({
       defaultStrategy: 'jwt',
@@ -47,6 +50,6 @@ import { OtpService } from '../otp/otp-service.js';
   providers: [AuthService, JwtStrategy],
 
   // Make AuthService available to other modules.
-  exports: [AuthService,],
+  exports: [AuthService],
 })
 export class AuthModule {}

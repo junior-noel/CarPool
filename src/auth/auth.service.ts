@@ -3,6 +3,7 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 
 import { JwtService } from '@nestjs/jwt';
@@ -18,8 +19,12 @@ import { OtpService } from '../otp/otp-service.js';
 import { OtpPurpose } from '../otp/otp-purpose.enum.js';
 import { EmailService } from '../email/email.service.js';
 import { VerifyOtpDto } from './dto/verify-otp.dto.js';
+import { ResendOtpDto } from './dto/resend-otp.dto.js';
 
 const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
+const NEUTRAL_RESEND_RESPONSE = {
+  message: 'If the account needs verification, a code will be sent.',
+};
 
 @Injectable()
 export class AuthService {
@@ -58,8 +63,8 @@ export class AuthService {
       role: 'user',
     });
 
-    // Generate a verification OTP for the newly created user.
-    const { code } = await this.otpService.createOtp(
+    // Save the OTP only after email delivery so failed signup sends do not count.
+    const { otp, code } = await this.otpService.prepareOtp(
       user,
       OtpPurpose.EMAIL_VERIFICATION,
     );
@@ -70,6 +75,7 @@ export class AuthService {
       code,
       OtpPurpose.EMAIL_VERIFICATION,
     );
+    await this.otpService.persistOtp(otp);
 
     // Return a success message and the user information without the password.
     return {
@@ -119,6 +125,65 @@ export class AuthService {
     return { message: 'Email verified successfully.' };
   }
 
+  // Apply account limits while keeping each account-level outcome indistinguishable.
+  async resendVerification(resendOtpDto: ResendOtpDto) {
+    const user = await this.usersService.findByEmail(resendOtpDto.email);
+
+    if (!user) {
+      this.logger.warn('Verification resend skipped: account not found');
+      return NEUTRAL_RESEND_RESPONSE;
+    }
+
+    if (user.emailVerified) {
+      this.logger.warn('Verification resend skipped: account already verified');
+      return NEUTRAL_RESEND_RESPONSE;
+    }
+
+    const latestOtp = await this.otpService.findLatestForUserAndPurpose(
+      user.id,
+      OtpPurpose.EMAIL_VERIFICATION,
+    );
+
+    // Persisted OTP time records the most recent successful SMTP handoff.
+    if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < 60 * 1000) {
+      this.logger.warn('Verification resend skipped: account cooldown active');
+      return NEUTRAL_RESEND_RESPONSE;
+    }
+
+    const hourlyCount = await this.otpService.countCreatedSince(
+      user.id,
+      OtpPurpose.EMAIL_VERIFICATION,
+      new Date(Date.now() - 60 * 60 * 1000),
+    );
+
+    if (hourlyCount >= 5) {
+      this.logger.warn(
+        'Verification resend skipped: account hourly cap reached',
+      );
+      return NEUTRAL_RESEND_RESPONSE;
+    }
+
+    const { otp, code } = await this.otpService.prepareOtp(
+      user,
+      OtpPurpose.EMAIL_VERIFICATION,
+    );
+
+    try {
+      await this.emailService.sendOtpEmail(
+        user.email,
+        code,
+        OtpPurpose.EMAIL_VERIFICATION,
+      );
+    } catch {
+      // EmailService logs the SMTP detail; don't expose it or save/count this OTP.
+      this.logger.warn('Verification resend skipped: email delivery failed');
+      return NEUTRAL_RESEND_RESPONSE;
+    }
+
+    await this.otpService.persistOtp(otp);
+    return NEUTRAL_RESEND_RESPONSE;
+  }
+
   // This method handles user login.
   async login(loginDto: loginDto) {
     // Extract the email and password submitted by the user.
@@ -134,6 +199,13 @@ export class AuthService {
 
     if (!passwordMatch) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Check verification only after valid credentials, avoiding account discovery by email alone.
+    if (!user.emailVerified) {
+      throw new ForbiddenException(
+        'Please verify your email before logging in.',
+      );
     }
 
     // These values will be stored inside the JWT payload.
