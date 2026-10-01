@@ -13,6 +13,18 @@ import { UserService } from '../users/user.service.js';
 import { promises } from 'dns';
 import { User } from '../users/user.entity.js';
 
+export interface PassengerApplicationResponse {
+  id: string;
+  status: PassengerApplicationStatus;
+  submittedAt: Date;
+  reviewedAt: Date | null;
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+}
+
 @Injectable()
 export class PassengerApplicationService {
   constructor(
@@ -26,12 +38,29 @@ export class PassengerApplicationService {
     private readonly userService: UserService,
   ) {}
 
+  // Build a response containing application details and applicant identity only.
+  private toResponse(
+    application: PassengerApplication,
+  ): PassengerApplicationResponse {
+    return {
+      id: application.id,
+      status: application.status,
+      submittedAt: application.submittedAt,
+      reviewedAt: application.reviewedAt,
+      user: {
+        id: application.user.id,
+        firstName: application.user.firstName,
+        lastName: application.user.lastName,
+      },
+    };
+  }
+
   // Creates a passenger application for the authenticated user.
 
   async create(
     userId: string,
     createDto: CreatePassengerApplicationDto,
-  ): Promise<object> {
+  ): Promise<PassengerApplicationResponse> {
     const user = await this.userService.findById(userId);
 
     if (!user) {
@@ -60,22 +89,12 @@ export class PassengerApplicationService {
 
     const savedApplication = await this.applicationRepository.save(application);
 
-    const { password: _, ...safeUser } = savedApplication.user;
-
-    return {
-      id: savedApplication.id,
-      user: safeUser,
-      phoneNumber: savedApplication.phoneNumber,
-      identificationNumber: savedApplication.identificationNumber,
-      identificationType: savedApplication.identificationType,
-      submittedAt: savedApplication.submittedAt,
-      reviewedAt: savedApplication.reviewedAt,
-      sattus: savedApplication.status,
-      rejectionReason: savedApplication.rejectionReason,
-    };
+    return this.toResponse(savedApplication);
   }
 
-  async approve(applicationId: string): Promise<object> {
+  async approve(
+    applicationId: string,
+  ): Promise<PassengerApplicationResponse> {
     // Find the passenger application and load the related user.
     const application = await this.applicationRepository.findOne({
       where: {
@@ -105,20 +124,7 @@ export class PassengerApplicationService {
 
     const savedApplication = await this.applicationRepository.save(application);
 
-    // Never expose the user's password hash in the API response.
-    const { password: _, ...safeUser } = savedApplication.user;
-
-    return {
-      id: savedApplication.id,
-      user: safeUser,
-      status: savedApplication.status,
-      phoneNumber: savedApplication.phoneNumber,
-      identificationNumber: savedApplication.identificationNumber,
-      identificationType: savedApplication.identificationType,
-      submittedAt: savedApplication.submittedAt,
-      reviewedAt: savedApplication.reviewedAt,
-      rejectionReason: savedApplication.rejectionReason,
-    };
+    return this.toResponse(savedApplication);
   }
 
   async isPassengerApproved(userId: string): Promise<boolean> {

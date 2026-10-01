@@ -10,6 +10,19 @@ import {DriverApplication,DriverApplicationStatus,} from './driver-application.e
 import { CreateDriverApplicationDto } from './dto/create-driver-application.dto.js';
 import { UserService } from '../users/user.service.js';
 
+export interface DriverApplicationResponse {
+    id: string;
+    status: DriverApplicationStatus;
+    submittedAt: Date;
+    licenseExpiryDate: Date;
+    reviewedAt: Date | null;
+    user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+    };
+}
+
 @Injectable()
 export class DriverApplicationService{
     constructor(
@@ -17,11 +30,27 @@ export class DriverApplicationService{
     private readonly applicationRepository: Repository<DriverApplication>,
     private readonly userService: UserService,
     ) { }
+
+    // Build a response containing application details and applicant identity only.
+    private toResponse(application: DriverApplication): DriverApplicationResponse {
+        return {
+            id: application.id,
+            status: application.status,
+            submittedAt: application.submittedAt,
+            licenseExpiryDate: application.licenseExpiryDate,
+            reviewedAt: application.reviewedAt,
+            user: {
+                id: application.user.id,
+                firstName: application.user.firstName,
+                lastName: application.user.lastName,
+            },
+        };
+    }
     
     async create(
         userId: string,
         createDto: CreateDriverApplicationDto,
-    ): Promise<DriverApplication> {
+    ): Promise<DriverApplicationResponse> {
 
         //find the user submttng the applcation
         const user = await this.userService.findById(userId);
@@ -54,10 +83,11 @@ export class DriverApplicationService{
           status: DriverApplicationStatus.PENDING,
         });
 
-        return this.applicationRepository.save(applcation);
+        const savedApplication = await this.applicationRepository.save(applcation);
+        return this.toResponse(savedApplication);
     }
 
-    async approve(applcationId: string): Promise<DriverApplication>{
+    async approve(applcationId: string): Promise<DriverApplicationResponse>{
       //find the driver applicaton
       const applcation = await this.applicationRepository.findOne({
         where: { id: applcationId },
@@ -85,6 +115,7 @@ export class DriverApplicationService{
         //make the spplcston as approve
         applcation.status = DriverApplicationStatus.APPROVED;
         applcation.reviewedAt = new Date();
-        return this.applicationRepository.save(applcation)
+        const savedApplication = await this.applicationRepository.save(applcation);
+        return this.toResponse(savedApplication);
     }
 }

@@ -12,7 +12,6 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { PassengerApplication, PassengerApplicationStatus } from './passenger-application.entity.js';
 import { PassengerGuard } from './guards/passenger.guard.js';
 
 
@@ -30,7 +29,19 @@ export class PassengerApplicationController {
   })
   @ApiCreatedResponse({
     description: 'Apllication successfully created',
-    type: PassengerApplication,
+    schema: {
+      example: {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'pending',
+        submittedAt: '2026-10-01T10:00:00.000Z',
+        reviewedAt: null,
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          firstName: 'Alex',
+          lastName: 'Passenger',
+        },
+      },
+    },
   })
   // Allows an authenticated user to applyto become an approved passenger.
   @UseGuards(JwtAuthGuard)
@@ -50,7 +61,19 @@ export class PassengerApplicationController {
   })
   @ApiOkResponse({
     description: 'Apllication approved',
-    type: PassengerApplication,
+    schema: {
+      example: {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'approved',
+        submittedAt: '2026-10-01T10:00:00.000Z',
+        reviewedAt: '2026-10-01T11:00:00.000Z',
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          firstName: 'Alex',
+          lastName: 'Passenger',
+        },
+      },
+    },
   })
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch(':id/approve')

@@ -20,8 +20,6 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { DriverApplication } from './driver-application.entity.js';
-
 @ApiTags('Driver Application')
 @ApiBearerAuth()
 @Controller('driver-application')
@@ -36,7 +34,20 @@ export class DriverApplicationController {
   })
   @ApiCreatedResponse({
     description: 'Application created successfully',
-    type: DriverApplication,
+    schema: {
+      example: {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'pending',
+        submittedAt: '2026-10-01T10:00:00.000Z',
+        licenseExpiryDate: '2028-10-01',
+        reviewedAt: null,
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          firstName: 'Alex',
+          lastName: 'Driver',
+        },
+      },
+    },
   })
   //only authentcated users can submt a drver application
   @UseGuards(JwtAuthGuard)
@@ -57,7 +68,20 @@ export class DriverApplicationController {
   })
   @ApiOkResponse({
     description: 'Application approved',
-    type: DriverApplication,
+    schema: {
+      example: {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        status: 'approved',
+        submittedAt: '2026-10-01T10:00:00.000Z',
+        licenseExpiryDate: '2028-10-01',
+        reviewedAt: '2026-10-01T11:00:00.000Z',
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440001',
+          firstName: 'Alex',
+          lastName: 'Driver',
+        },
+      },
+    },
   })
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch(':id/approve')
