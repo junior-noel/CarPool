@@ -5,12 +5,15 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 
 import { ApiProperty } from '@nestjs/swagger';
 
 import { User } from '../users/user.entity.js';
 import { Ride } from '../rides/ride.entity.js';
+import { RideRequest } from '../ride-request/ride-request.entity.js';
 
 /**
  * Represents the current state of a booking.
@@ -63,8 +66,8 @@ export class Booking {
     default: BookingStatus.PENDING,
   })
   status: BookingStatus;
-   
-    // A user can have many bookings.
+
+  // A user can have many bookings.
   @ApiProperty({
     description: 'Passenger who created the booking',
     type: () => User,
@@ -74,7 +77,7 @@ export class Booking {
   })
   passenger: User;
 
-// A ride can have many bookings.
+  // A ride can have many bookings.
   @ApiProperty({
     description: 'Ride being booked',
     type: () => Ride,
@@ -83,6 +86,11 @@ export class Booking {
     nullable: false,
   })
   ride: Ride;
+
+  @Index()
+  @ManyToOne(() => RideRequest, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'rideRequestId' })
+  rideRequest: RideRequest | null;
 
   @ApiProperty({
     description: 'Date and time when the booking was created',

@@ -243,6 +243,7 @@ export class RideRequestService {
       const booking = bookingRepository.create({
         passenger: rideRequest.passenger,
         ride,
+        rideRequest,
         seats: rideRequest.seatsNeeded,
         totalPrice,
         status: BookingStatus.PENDING,

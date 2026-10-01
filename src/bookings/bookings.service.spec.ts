@@ -3,6 +3,10 @@ import type { DataSource, EntityManager, Repository } from 'typeorm';
 import { Booking, BookingStatus } from './booking.entity.js';
 import { Ride } from '../rides/ride.entity.js';
 import { User } from '../users/user.entity.js';
+import {
+  RideRequest,
+  RideRequestStatus,
+} from '../ride-request/ride-request.entity.js';
 import { BookingService } from './bookings.service.js';
 
 const driverId = 'driver-id';
@@ -27,6 +31,7 @@ function createBooking(
   ride: Ride,
   seats: number,
   status = BookingStatus.PENDING,
+  rideRequest: RideRequest | null = null,
 ): Booking {
   return {
     id,
@@ -35,15 +40,35 @@ function createBooking(
     status,
     passenger: { id: `passenger-${id}`, password: 'hash' } as User,
     ride,
+    rideRequest,
   } as Booking;
 }
 
+// Build an accepted request with its current ride for linked-booking scenarios.
+function createRequest(id = 'request-id', ride = createRide(2)): RideRequest {
+  return {
+    id,
+    status: RideRequestStatus.ACCEPTED,
+    ride,
+  } as RideRequest;
+}
+
 // Simulate serialized database transactions with private working state and rollback on rejection.
-function createService(seedRide: Ride, seedBookings: Booking[]) {
+function createService(
+  seedRide: Ride,
+  seedBookings: Booking[],
+  seedRequests: RideRequest[] = [],
+) {
   let committedRide = { ...seedRide };
+  let committedRequests = seedRequests.map((request) => ({ ...request }));
   let committedBookings = seedBookings.map((booking) => ({
     ...booking,
     ride: committedRide,
+    rideRequest: booking.rideRequest
+      ? (committedRequests.find(
+          (request) => request.id === booking.rideRequest?.id,
+        ) ?? null)
+      : null,
   }));
   let transactionQueue = Promise.resolve();
   const rideSave = vi.fn(async (ride: Ride) => ride);
@@ -51,6 +76,8 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
   const rideLockOptions: unknown[] = [];
   const bookingLockOptions: unknown[] = [];
   const lockOrder: string[] = [];
+  const requestLockOptions: unknown[] = [];
+  const requestSave = vi.fn(async (request: RideRequest) => request);
   const dataSource = {
     transaction: vi.fn(
       async (
@@ -64,10 +91,19 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
         await previousTransaction;
 
         const workingRide = { ...committedRide };
+        const workingRequests = new Map(
+          committedRequests.map((request) => [request.id, { ...request }]),
+        );
         const workingBookings = new Map(
           committedBookings.map((booking) => [
             booking.id,
-            { ...booking, ride: workingRide },
+            {
+              ...booking,
+              ride: workingRide,
+              rideRequest: booking.rideRequest
+                ? (workingRequests.get(booking.rideRequest.id) ?? null)
+                : null,
+            },
           ]),
         );
         const bookingRepository = {
@@ -83,6 +119,39 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
           save: vi.fn(async (booking: Booking) => {
             const saved = await bookingSave(booking);
             workingBookings.set(saved.id, saved);
+            return saved;
+          }),
+          count: vi.fn(
+            async (options: {
+              where: {
+                rideRequest: { id: string };
+                id: { value: string };
+                status: { value: BookingStatus[] };
+              };
+            }) => {
+              const { rideRequest, id, status } = options.where;
+              return [...workingBookings.values()].filter(
+                (booking) =>
+                  booking.rideRequest?.id === rideRequest.id &&
+                  booking.id !== id.value &&
+                  status.value.includes(booking.status),
+              ).length;
+            },
+          ),
+        };
+        const requestRepository = {
+          findOne: vi.fn(
+            async (options: { where: { id: string }; lock?: unknown }) => {
+              if (options.lock) {
+                requestLockOptions.push(options.lock);
+                lockOrder.push('request');
+              }
+              return workingRequests.get(options.where.id) ?? null;
+            },
+          ),
+          save: vi.fn(async (request: RideRequest) => {
+            const saved = await requestSave(request);
+            workingRequests.set(saved.id, saved);
             return saved;
           }),
         };
@@ -103,6 +172,7 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
           getRepository: (entity: unknown) => {
             if (entity === Booking) return bookingRepository;
             if (entity === Ride) return rideRepository;
+            if (entity === RideRequest) return requestRepository;
             throw new Error('Unexpected transaction repository');
           },
         } as unknown as EntityManager;
@@ -110,6 +180,7 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
         try {
           const result = await runInTransaction(manager);
           committedRide = workingRide;
+          committedRequests = [...workingRequests.values()];
           committedBookings = [...workingBookings.values()];
           return result;
         } finally {
@@ -132,9 +203,12 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
     rideLockOptions,
     bookingLockOptions,
     lockOrder,
+    requestLockOptions,
+    requestSave,
     getCommittedState: () => ({
       ride: committedRide,
       bookings: committedBookings,
+      requests: committedRequests,
     }),
   };
 }
@@ -258,6 +332,92 @@ describe('BookingService.rejectBooking', () => {
     expect(mocks.bookingSave).toHaveBeenCalledOnce();
     expect(mocks.rideSave).not.toHaveBeenCalled();
     expect(mocks.lockOrder).toEqual(['booking']);
+    expect(mocks.getCommittedState().requests).toHaveLength(0);
+  });
+
+  it('reopens and unlinks an accepted request when its booking is rejected', async () => {
+    const ride = createRide(2);
+    const request = createRequest('rejected-request', ride);
+    const booking = createBooking(
+      'linked-pending-rejection',
+      ride,
+      1,
+      BookingStatus.PENDING,
+      request,
+    );
+    const mocks = createService(ride, [booking], [request]);
+
+    await mocks.service.rejectBooking(driverId, booking.id);
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.REJECTED,
+    );
+    expect(mocks.getCommittedState().requests[0].status).toBe(
+      RideRequestStatus.OPEN,
+    );
+    expect(mocks.getCommittedState().requests[0].ride).toBeNull();
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.lockOrder).toEqual(['booking', 'request']);
+  });
+
+  it('does not reopen or unlink when another pending or approved booking remains', async () => {
+    const ride = createRide(1);
+    const request = createRequest('request-with-another-active-booking', ride);
+    const bookingToReject = createBooking(
+      'booking-being-rejected',
+      ride,
+      1,
+      BookingStatus.PENDING,
+      request,
+    );
+    const otherActiveBooking = createBooking(
+      'other-active-booking',
+      ride,
+      1,
+      BookingStatus.APPROVED,
+      request,
+    );
+    const mocks = createService(
+      ride,
+      [bookingToReject, otherActiveBooking],
+      [request],
+    );
+
+    await mocks.service.rejectBooking(driverId, bookingToReject.id);
+
+    expect(mocks.getCommittedState().requests[0].status).toBe(
+      RideRequestStatus.ACCEPTED,
+    );
+    expect(mocks.getCommittedState().requests[0].ride).toBe(ride);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.REJECTED,
+    );
+  });
+
+  it('rolls back booking rejection when saving the reopened request fails', async () => {
+    const ride = createRide(2);
+    const request = createRequest('request-save-failure', ride);
+    const booking = createBooking(
+      'booking-request-save-failure',
+      ride,
+      1,
+      BookingStatus.PENDING,
+      request,
+    );
+    const mocks = createService(ride, [booking], [request]);
+    mocks.requestSave.mockRejectedValue(new Error('Request save failed'));
+
+    await expect(
+      mocks.service.rejectBooking(driverId, booking.id),
+    ).rejects.toThrow('Request save failed');
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.PENDING,
+    );
+    expect(mocks.getCommittedState().requests[0].status).toBe(
+      RideRequestStatus.ACCEPTED,
+    );
+    expect(mocks.getCommittedState().requests[0].ride).toBe(ride);
   });
 
   it.each([
@@ -374,6 +534,31 @@ describe('BookingService.cancelBooking', () => {
     expect(mocks.lockOrder).toEqual(['booking', 'ride']);
   });
 
+  it('does not reopen an accepted request when an approved booking is cancelled', async () => {
+    const ride = createRide(1, 2);
+    const request = createRequest('approved-cancel-request', ride);
+    const booking = createBooking(
+      'linked-approved-cancel',
+      ride,
+      1,
+      BookingStatus.APPROVED,
+      request,
+    );
+    const mocks = createService(ride, [booking], [request]);
+
+    await mocks.service.cancelBooking(booking.passenger.id, booking.id);
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.CANCELLED,
+    );
+    expect(mocks.getCommittedState().requests[0].status).toBe(
+      RideRequestStatus.ACCEPTED,
+    );
+    expect(mocks.getCommittedState().requests[0].ride).toBe(ride);
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.lockOrder).toEqual(['booking', 'ride']);
+  });
+
   it('does not change seats when cancelling a pending booking', async () => {
     const ride = createRide(1, 2);
     const booking = createBooking('pending-to-cancel', ride, 1);
@@ -390,6 +575,31 @@ describe('BookingService.cancelBooking', () => {
     );
     expect(mocks.rideSave).not.toHaveBeenCalled();
     expect(mocks.lockOrder).toEqual(['booking']);
+  });
+
+  it('reopens and unlinks an accepted request when its pending booking is cancelled', async () => {
+    const ride = createRide(2);
+    const request = createRequest('pending-cancel-request', ride);
+    const booking = createBooking(
+      'linked-pending-cancel',
+      ride,
+      1,
+      BookingStatus.PENDING,
+      request,
+    );
+    const mocks = createService(ride, [booking], [request]);
+
+    await mocks.service.cancelBooking(booking.passenger.id, booking.id);
+
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.CANCELLED,
+    );
+    expect(mocks.getCommittedState().requests[0].status).toBe(
+      RideRequestStatus.OPEN,
+    );
+    expect(mocks.getCommittedState().requests[0].ride).toBeNull();
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.lockOrder).toEqual(['booking', 'request']);
   });
 
   it('rejects an already-cancelled booking without restoring seats', async () => {

@@ -175,9 +175,13 @@ describe('RideRequestService.acceptRequest', () => {
       expect.objectContaining({
         passenger: rideRequest.passenger,
         ride,
+        rideRequest: expect.objectContaining({ id: rideRequest.id }),
         seats: rideRequest.seatsNeeded,
         status: BookingStatus.PENDING,
       }),
+    );
+    expect(mocks.getCommittedState().bookings[0].rideRequest?.id).toBe(
+      rideRequest.id,
     );
     expect(ride.availableSeat).toBe(3);
     expect(mocks.rideRepository.save).not.toHaveBeenCalled();
@@ -212,6 +216,9 @@ describe('RideRequestService.acceptRequest', () => {
       RideRequestStatus.ACCEPTED,
     );
     expect(transactionalMocks.getCommittedState().bookings).toHaveLength(1);
+    expect(
+      transactionalMocks.getCommittedState().bookings[0].rideRequest?.id,
+    ).toBe(rideRequest.id);
     expect(ride.availableSeat).toBe(3);
   });
 

@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Not, Repository } from 'typeorm';
 import { Booking, BookingStatus } from './booking.entity.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
 import { UserService } from '../users/user.service.js';
 import { Ride } from '../rides/ride.entity.js';
+import {
+  RideRequest,
+  RideRequestStatus,
+} from '../ride-request/ride-request.entity.js';
 
 @Injectable()
 export class BookingService {
@@ -39,6 +43,43 @@ export class BookingService {
     const { password, ...safeUser } = user;
 
     return safeUser;
+  }
+
+  // Reopen only after locking the request and confirming no other active booking remains.
+  private async reopenRequestIfNoOtherActiveBookings(
+    manager: EntityManager,
+    booking: Booking,
+  ): Promise<void> {
+    if (!booking.rideRequest) {
+      return;
+    }
+
+    // Lock order: reject/pending-cancel use booking then request; approve/approved-cancel use booking then ride; accept locks request only.
+    const requestRepository = manager.getRepository(RideRequest);
+    const rideRequest = await requestRepository.findOne({
+      where: { id: booking.rideRequest.id },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!rideRequest || rideRequest.status !== RideRequestStatus.ACCEPTED) {
+      return;
+    }
+
+    const otherActiveBookings = await manager.getRepository(Booking).count({
+      where: {
+        rideRequest: { id: rideRequest.id },
+        id: Not(booking.id),
+        status: In([BookingStatus.PENDING, BookingStatus.APPROVED]),
+      },
+    });
+
+    if (otherActiveBookings > 0) {
+      return;
+    }
+
+    rideRequest.status = RideRequestStatus.OPEN;
+    rideRequest.ride = null;
+    await requestRepository.save(rideRequest);
   }
 
   //Create a new booking for an existing ride.
@@ -299,20 +340,34 @@ export class BookingService {
     return this.dataSource.transaction(async (manager) => {
       const bookingRepository = manager.getRepository(Booking);
       // Lock before reading status so reject cannot race with approval or cancellation.
+      const lockedBooking = await bookingRepository.findOne({
+        where: { id: bookingId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedBooking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      if (lockedBooking.status !== BookingStatus.PENDING) {
+        throw new ConflictException(
+          `Booking cannot be rejected because its current status is "${lockedBooking.status}"`,
+        );
+      }
+
       const booking = await bookingRepository.findOne({
         where: { id: bookingId },
-        relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
-        lock: { mode: 'pessimistic_write' },
+        relations: [
+          'passenger',
+          'ride',
+          'ride.vehicle',
+          'ride.driver',
+          'rideRequest',
+        ],
       });
 
       if (!booking) {
         throw new NotFoundException('Booking not found');
-      }
-
-      if (booking.status !== BookingStatus.PENDING) {
-        throw new ConflictException(
-          `Booking cannot be rejected because its current status is "${booking.status}"`,
-        );
       }
 
       if (booking.ride.driver.id !== driverId) {
@@ -323,6 +378,7 @@ export class BookingService {
 
       booking.status = BookingStatus.REJECTED;
       await bookingRepository.save(booking);
+      await this.reopenRequestIfNoOtherActiveBookings(manager, booking);
 
       return {
         ...booking,
@@ -340,10 +396,33 @@ export class BookingService {
     return this.dataSource.transaction(async (manager) => {
       const bookingRepository = manager.getRepository(Booking);
       // Lock the booking first, matching approval's lock order.
+      const lockedBooking = await bookingRepository.findOne({
+        where: { id: bookingId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedBooking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      if (
+        lockedBooking.status === BookingStatus.REJECTED ||
+        lockedBooking.status === BookingStatus.CANCELLED
+      ) {
+        throw new ConflictException(
+          `Booking cannot be cancelled because its current status is "${lockedBooking.status}"`,
+        );
+      }
+
       const booking = await bookingRepository.findOne({
         where: { id: bookingId },
-        relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
-        lock: { mode: 'pessimistic_write' },
+        relations: [
+          'passenger',
+          'ride',
+          'ride.vehicle',
+          'ride.driver',
+          'rideRequest',
+        ],
       });
 
       if (!booking) {
@@ -354,15 +433,7 @@ export class BookingService {
         throw new ConflictException('You can only cancel your own bookings');
       }
 
-      if (
-        booking.status === BookingStatus.REJECTED ||
-        booking.status === BookingStatus.CANCELLED
-      ) {
-        throw new ConflictException(
-          `Booking cannot be cancelled because its current status is "${booking.status}"`,
-        );
-      }
-
+      const wasPending = booking.status === BookingStatus.PENDING;
       let ride = booking.ride;
       if (booking.status === BookingStatus.APPROVED) {
         const rideRepository = manager.getRepository(Ride);
@@ -390,6 +461,10 @@ export class BookingService {
 
       booking.status = BookingStatus.CANCELLED;
       await bookingRepository.save(booking);
+
+      if (wasPending) {
+        await this.reopenRequestIfNoOtherActiveBookings(manager, booking);
+      }
 
       return {
         ...booking,
