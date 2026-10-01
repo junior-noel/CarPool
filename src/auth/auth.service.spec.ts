@@ -16,6 +16,8 @@ import { AuthService } from './auth.service.js';
 
 const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
 
+type LoginUserFixture = Omit<User, 'deletedAt'> & { deletedAt: Date | null };
+
 function createAuthService() {
   const findByEmail = vi.fn();
   const createUser = vi.fn();
@@ -185,7 +187,7 @@ describe('AuthService.login email verification', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
-    } as User;
+    } satisfies LoginUserFixture;
     mocks.findByEmail.mockResolvedValue(user);
     mocks.signAsync.mockResolvedValue('signed-jwt');
 
@@ -216,7 +218,7 @@ describe('AuthService.login email verification', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
-    } as User;
+    } satisfies LoginUserFixture;
     mocks.findByEmail.mockResolvedValue(user);
 
     await expect(
@@ -245,7 +247,7 @@ describe('AuthService.login email verification', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           deletedAt: null,
-        } as User,
+        } satisfies LoginUserFixture,
       },
       {
         email: 'verified@example.com',
@@ -261,7 +263,7 @@ describe('AuthService.login email verification', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           deletedAt: null,
-        } as User,
+        } satisfies LoginUserFixture,
       },
     ];
     const responses = [];
@@ -410,6 +412,140 @@ describe('AuthService.resendVerification', () => {
     );
 
     expect(responses).toEqual(resendScenarios.map(() => neutralResponse));
+  });
+});
+
+describe('AuthService.forgotPassword', () => {
+  const dto = { email: 'user@example.com' };
+  const verifiedUser = {
+    id: 'verified-user-id',
+    email: dto.email,
+    emailVerified: true,
+  } as User;
+  const unverifiedUser = { ...verifiedUser, emailVerified: false } as User;
+  const resetOtp = {
+    user: verifiedUser,
+    purpose: OtpPurpose.PASSWORD_RESET,
+    codeHash: 'reset-code-hash',
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    attempts: 0,
+    used: false,
+  } as Otp;
+  const verificationOtp = {
+    ...resetOtp,
+    purpose: OtpPurpose.EMAIL_VERIFICATION,
+  } as Otp;
+  const neutralResponse = {
+    message: 'If the account is eligible, a password reset code will be sent.',
+  };
+  const scenarios: Array<{
+    name: string;
+    user: User | null;
+    latestOtp: Otp | null;
+    hourlyCount: number;
+    emailError?: Error;
+  }> = [
+    { name: 'eligible account', user: verifiedUser, latestOtp: null, hourlyCount: 0 },
+    { name: 'unknown email', user: null, latestOtp: null, hourlyCount: 0 },
+    { name: 'unverified account', user: unverifiedUser, latestOtp: null, hourlyCount: 0 },
+    {
+      name: 'cooldown active',
+      user: verifiedUser,
+      latestOtp: { ...resetOtp, createdAt: new Date(Date.now() - 30 * 1000) } as Otp,
+      hourlyCount: 1,
+    },
+    { name: 'hourly cap reached', user: verifiedUser, latestOtp: null, hourlyCount: 5 },
+    {
+      name: 'SMTP failure',
+      user: verifiedUser,
+      latestOtp: null,
+      hourlyCount: 0,
+      emailError: new Error('SMTP unavailable'),
+    },
+  ];
+
+  // Run one password-reset request with isolated account, OTP, and email mocks.
+  async function runScenario(scenario: (typeof scenarios)[number]) {
+    const mocks = createAuthService();
+    mocks.findByEmail.mockResolvedValue(scenario.user);
+    mocks.findLatestForUserAndPurpose.mockResolvedValue(scenario.latestOtp);
+    mocks.countCreatedSince.mockResolvedValue(scenario.hourlyCount);
+    mocks.prepareOtp.mockResolvedValue({ otp: resetOtp, code: '001234' });
+    mocks.persistOtp.mockResolvedValue(resetOtp);
+    if (scenario.emailError) {
+      mocks.sendOtpEmail.mockRejectedValue(scenario.emailError);
+    } else {
+      mocks.sendOtpEmail.mockResolvedValue(undefined);
+    }
+
+    const response = await mocks.authService.forgotPassword(dto);
+    return { response, mocks };
+  }
+
+  it('sends a password-reset code before persisting it for an eligible account', async () => {
+    const { response, mocks } = await runScenario(scenarios[0]);
+
+    expect(response).toEqual(neutralResponse);
+    expect(mocks.sendOtpEmail).toHaveBeenCalledWith(
+      verifiedUser.email,
+      '001234',
+      OtpPurpose.PASSWORD_RESET,
+    );
+    expect(mocks.persistOtp).toHaveBeenCalledWith(resetOtp);
+    expect(mocks.sendOtpEmail.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.persistOtp.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(scenarios)('$name returns the neutral response', async (scenario) => {
+    const { response, mocks } = await runScenario(scenario);
+
+    expect(response).toEqual(neutralResponse);
+    if (scenario.emailError) {
+      expect(mocks.persistOtp).not.toHaveBeenCalled();
+    } else if (scenario.name !== 'eligible account') {
+      expect(mocks.sendOtpEmail).not.toHaveBeenCalled();
+      expect(mocks.persistOtp).not.toHaveBeenCalled();
+    }
+  });
+
+  it('returns the same response for every account-level outcome', async () => {
+    const responses = await Promise.all(
+      scenarios.map(async (scenario) => {
+        const { response } = await runScenario(scenario);
+        return response;
+      }),
+    );
+
+    expect(responses).toEqual(scenarios.map(() => neutralResponse));
+  });
+
+  it('queries cooldown and cap only for password-reset OTPs', async () => {
+    const mocks = createAuthService();
+    mocks.findByEmail.mockResolvedValue(verifiedUser);
+    mocks.findLatestForUserAndPurpose.mockImplementation(
+      async (_userId: string, purpose: OtpPurpose) =>
+        purpose === OtpPurpose.PASSWORD_RESET ? null : verificationOtp,
+    );
+    mocks.countCreatedSince.mockImplementation(
+      async (_userId: string, purpose: OtpPurpose) =>
+        purpose === OtpPurpose.PASSWORD_RESET ? 0 : 5,
+    );
+    mocks.prepareOtp.mockResolvedValue({ otp: resetOtp, code: '001234' });
+    mocks.persistOtp.mockResolvedValue(resetOtp);
+    mocks.sendOtpEmail.mockResolvedValue(undefined);
+
+    await mocks.authService.forgotPassword(dto);
+
+    expect(mocks.findLatestForUserAndPurpose).toHaveBeenCalledWith(
+      verifiedUser.id,
+      OtpPurpose.PASSWORD_RESET,
+    );
+    expect(mocks.countCreatedSince).toHaveBeenCalledWith(
+      verifiedUser.id,
+      OtpPurpose.PASSWORD_RESET,
+      expect.any(Date),
+    );
   });
 });
 

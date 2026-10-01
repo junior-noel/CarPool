@@ -39,6 +39,7 @@ export class EmailService {
     purpose: string,
   ): Promise<void> {
     try {
+      const isPasswordReset = purpose === 'PASSWORD_RESET';
       await this.transporter.sendMail({
         // The email address that sends the message.
         from: process.env.SMTP_FROM,
@@ -47,16 +48,27 @@ export class EmailService {
         to: email,
 
         // Email subject.
-        subject:
-          purpose === 'EMAIL_VERIFICATION'
-            ? 'Verify your CarPool account'
-            : 'Your CarPool verification code',
+        subject: isPasswordReset
+          ? 'Reset your CarPool password'
+          : 'Verify your CarPool account',
 
         // Plain-text version of the email.
-        text: `Your CarPool email verification code is ${otpCode}. Use it to verify your email address. This code expires in 10 minutes.`,
+        text: isPasswordReset
+          ? `Your CarPool password reset code is ${otpCode}. This code expires in 10 minutes. If you did not request a password reset, you can ignore this email.`
+          : `Your CarPool email verification code is ${otpCode}. Use it to verify your email address. This code expires in 10 minutes.`,
 
         // HTML version of the email.
-        html: `
+        html: isPasswordReset
+          ? `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+            <h2>CarPool Password Reset</h2>
+            <p>Your password reset code is:</p>
+            <h1 style="letter-spacing: 6px;">${otpCode}</h1>
+            <p>This code expires in <strong>10 minutes</strong>.</p>
+            <p>If you did not request a password reset, you can ignore this email.</p>
+          </div>
+        `
+          : `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
             <h2>CarPool Email Verification</h2>
 

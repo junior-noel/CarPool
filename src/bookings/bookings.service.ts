@@ -23,7 +23,7 @@ export class BookingService {
 
     private readonly userService: UserService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   /**
    * Removes sensitive information from a User object
@@ -405,3 +405,5 @@ export class BookingService {
     });
   }
 }
+
+

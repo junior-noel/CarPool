@@ -20,10 +20,14 @@ import { OtpPurpose } from '../otp/otp-purpose.enum.js';
 import { EmailService } from '../email/email.service.js';
 import { VerifyOtpDto } from './dto/verify-otp.dto.js';
 import { ResendOtpDto } from './dto/resend-otp.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 
 const INVALID_VERIFICATION_MESSAGE = 'Invalid or expired verification code.';
 const NEUTRAL_RESEND_RESPONSE = {
   message: 'If the account needs verification, a code will be sent.',
+};
+const NEUTRAL_FORGOT_PASSWORD_RESPONSE = {
+  message: 'If the account is eligible, a password reset code will be sent.',
 };
 
 @Injectable()
@@ -182,6 +186,57 @@ export class AuthService {
 
     await this.otpService.persistOtp(otp);
     return NEUTRAL_RESEND_RESPONSE;
+  }
+
+  // Request a password-reset OTP without exposing account eligibility.
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
+    const user = await this.usersService.findByEmail(forgotPasswordDto.email);
+
+    if (!user) {
+      this.logger.warn('Password reset request skipped: account not found');
+      return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
+    }
+
+    if (!user.emailVerified) {
+      this.logger.warn('Password reset request skipped: email not verified');
+      return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
+    }
+
+    const purpose = OtpPurpose.PASSWORD_RESET;
+    const latestOtp = await this.otpService.findLatestForUserAndPurpose(
+      user.id,
+      purpose,
+    );
+
+    // Only persisted password-reset OTPs start this purpose's cooldown.
+    if (latestOtp && Date.now() - latestOtp.createdAt.getTime() < 60 * 1000) {
+      this.logger.warn('Password reset request skipped: account cooldown active');
+      return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
+    }
+
+    const hourlyCount = await this.otpService.countCreatedSince(
+      user.id,
+      purpose,
+      new Date(Date.now() - 60 * 60 * 1000),
+    );
+
+    if (hourlyCount >= 5) {
+      this.logger.warn('Password reset request skipped: account hourly cap reached');
+      return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
+    }
+
+    const { otp, code } = await this.otpService.prepareOtp(user, purpose);
+
+    try {
+      await this.emailService.sendOtpEmail(user.email, code, purpose);
+    } catch {
+      // EmailService logs SMTP details; do not save an undelivered reset code.
+      this.logger.warn('Password reset request skipped: email delivery failed');
+      return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
+    }
+
+    await this.otpService.persistOtp(otp);
+    return NEUTRAL_FORGOT_PASSWORD_RESPONSE;
   }
 
   // This method handles user login.
