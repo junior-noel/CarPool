@@ -338,58 +338,70 @@ export class BookingService {
     };
   }
 
-  //Cancel PENDING bookng
-  async cancelBooking(userId: string, bookingId: string): Promise<any>{
-    // Find the booking together with the passenger and ride information.
-    const booking = await this.bookingRepository.findOne({
-      where: { id: bookingId },
-      relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+  // Cancel a passenger's booking and restore seats atomically when it was approved.
+  async cancelBooking(userId: string, bookingId: string): Promise<any> {
+    return this.dataSource.transaction(async (manager) => {
+      const bookingRepository = manager.getRepository(Booking);
+      // Lock the booking first, matching approval's lock order.
+      const booking = await bookingRepository.findOne({
+        where: { id: bookingId },
+        relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!booking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      if (booking.passenger.id !== userId) {
+        throw new ConflictException('You can only cancel your own bookings');
+      }
+
+      if (
+        booking.status === BookingStatus.REJECTED ||
+        booking.status === BookingStatus.CANCELLED
+      ) {
+        throw new ConflictException(
+          `Booking cannot be cancelled because its current status is "${booking.status}"`,
+        );
+      }
+
+      let ride = booking.ride;
+      if (booking.status === BookingStatus.APPROVED) {
+        const rideRepository = manager.getRepository(Ride);
+        // Lock the ride after the booking so approval and cancellation share lock order.
+        const lockedRide = await rideRepository.findOne({
+          where: { id: booking.ride.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!lockedRide) {
+          throw new NotFoundException('Ride not found');
+        }
+
+        if (lockedRide.availableSeat + booking.seats > lockedRide.totalSeat) {
+          throw new BadRequestException(
+            'Cancelling this booking would exceed the ride capacity.',
+          );
+        }
+
+        lockedRide.availableSeat += booking.seats;
+        ride = lockedRide;
+        booking.ride = lockedRide;
+        await rideRepository.save(lockedRide);
+      }
+
+      booking.status = BookingStatus.CANCELLED;
+      await bookingRepository.save(booking);
+
+      return {
+        ...booking,
+        passenger: this.sanitizeUser(booking.passenger),
+        ride: {
+          ...ride,
+          driver: this.sanitizeUser(ride.driver),
+        },
+      };
     });
-
-    // Make sure the booking actually exists.
-    if (!booking) {
-      throw new NotFoundException('Booking not found');
-    }
-
-    // Only the passenger who created the booking can cancel it.
-    if (booking.passenger.id !== userId) {
-      throw new ConflictException('You can only cancel your own bookings');
-    }
-
-    // A booking that has already been rejected or cancelled cannot be cancelled again.
-     if (
-       booking.status === BookingStatus.REJECTED ||
-       booking.status === BookingStatus.CANCELLED
-     ) {
-       throw new ConflictException(
-         `Booking cannot be cancelled because its current status is "${booking.status}"`,
-       );
-    }
-    
-     if (booking.status === BookingStatus.APPROVED) {
-       booking.ride.availableSeat += booking.seats;
-
-       // Save the restored seat availability.
-       await this.rideRepository.save(booking.ride);
-    }
-     // Change the booking status to cancelled.
-  booking.status = BookingStatus.CANCELLED;
-
-  // Save the updated booking.
-  await this.bookingRepository.save(booking);
-
-  // Return the updated booking without exposing the password hash.
-  return {
-    ...booking,
-
-    passenger: this.sanitizeUser(booking.passenger),
-
-    ride: {
-      ...booking.ride,
-      driver: this.sanitizeUser(booking.ride.driver),
-    },
-  };
   }
-  
 }
-      

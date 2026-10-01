@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { DataSource, EntityManager, Repository } from 'typeorm';
 import { Booking, BookingStatus } from './booking.entity.js';
 import { Ride } from '../rides/ride.entity.js';
@@ -11,11 +8,15 @@ import { BookingService } from './bookings.service.js';
 const driverId = 'driver-id';
 const rideId = 'ride-id';
 
-// Build a ride with a mutable available-seat count for approval scenarios.
-function createRide(availableSeat: number): Ride {
+// Build a ride with capacity and mutable availability for seat scenarios.
+function createRide(
+  availableSeat: number,
+  totalSeat = availableSeat + 1,
+): Ride {
   return {
     id: rideId,
     availableSeat,
+    totalSeat,
     driver: { id: driverId } as User,
   } as Ride;
 }
@@ -49,9 +50,12 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
   const bookingSave = vi.fn(async (booking: Booking) => booking);
   const rideLockOptions: unknown[] = [];
   const bookingLockOptions: unknown[] = [];
+  const lockOrder: string[] = [];
   const dataSource = {
     transaction: vi.fn(
-      async (runInTransaction: (manager: EntityManager) => Promise<unknown>) => {
+      async (
+        runInTransaction: (manager: EntityManager) => Promise<unknown>,
+      ) => {
         let releaseTransaction!: () => void;
         const previousTransaction = transactionQueue;
         transactionQueue = new Promise<void>((resolve) => {
@@ -67,10 +71,15 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
           ]),
         );
         const bookingRepository = {
-          findOne: vi.fn(async (options: { where: { id: string }; lock?: unknown }) => {
-            if (options.lock) bookingLockOptions.push(options.lock);
-            return workingBookings.get(options.where.id) ?? null;
-          }),
+          findOne: vi.fn(
+            async (options: { where: { id: string }; lock?: unknown }) => {
+              if (options.lock) {
+                bookingLockOptions.push(options.lock);
+                lockOrder.push('booking');
+              }
+              return workingBookings.get(options.where.id) ?? null;
+            },
+          ),
           save: vi.fn(async (booking: Booking) => {
             const saved = await bookingSave(booking);
             workingBookings.set(saved.id, saved);
@@ -79,7 +88,10 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
         };
         const rideRepository = {
           findOne: vi.fn(async (options: { lock?: unknown }) => {
-            if (options.lock) rideLockOptions.push(options.lock);
+            if (options.lock) {
+              rideLockOptions.push(options.lock);
+              lockOrder.push('ride');
+            }
             return workingRide;
           }),
           save: vi.fn(async (ride: Ride) => {
@@ -119,6 +131,7 @@ function createService(seedRide: Ride, seedBookings: Booking[]) {
     bookingSave,
     rideLockOptions,
     bookingLockOptions,
+    lockOrder,
     getCommittedState: () => ({
       ride: committedRide,
       bookings: committedBookings,
@@ -214,13 +227,218 @@ describe('BookingService.approveBooking', () => {
     expect(failures).toHaveLength(1);
     if (failures[0]?.status === 'rejected') {
       expect(failures[0].reason).toBeInstanceOf(BadRequestException);
-      expect(failures[0].reason.message).toContain('Not enough available seats');
+      expect(failures[0].reason.message).toContain(
+        'Not enough available seats',
+      );
     }
     expect(mocks.getCommittedState().ride.availableSeat).toBe(0);
     expect(
-      mocks.getCommittedState().bookings.filter(
-        (booking) => booking.status === BookingStatus.APPROVED,
-      ),
+      mocks
+        .getCommittedState()
+        .bookings.filter(
+          (booking) => booking.status === BookingStatus.APPROVED,
+        ),
     ).toHaveLength(1);
+  });
+});
+
+describe('BookingService.cancelBooking', () => {
+  it('restores seats once when cancelling an approved booking', async () => {
+    const ride = createRide(1, 2);
+    const booking = createBooking(
+      'approved-to-cancel',
+      ride,
+      1,
+      BookingStatus.APPROVED,
+    );
+    const mocks = createService(ride, [booking]);
+
+    const result = await mocks.service.cancelBooking(
+      booking.passenger.id,
+      booking.id,
+    );
+
+    expect(result.status).toBe(BookingStatus.CANCELLED);
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.CANCELLED,
+    );
+    expect(mocks.rideSave).toHaveBeenCalledOnce();
+    expect(mocks.bookingSave).toHaveBeenCalledOnce();
+    expect(mocks.lockOrder).toEqual(['booking', 'ride']);
+  });
+
+  it('does not change seats when cancelling a pending booking', async () => {
+    const ride = createRide(1, 2);
+    const booking = createBooking('pending-to-cancel', ride, 1);
+    const mocks = createService(ride, [booking]);
+
+    await mocks.service.cancelBooking(
+      'passenger-pending-to-cancel',
+      booking.id,
+    );
+
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(1);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.CANCELLED,
+    );
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+    expect(mocks.lockOrder).toEqual(['booking']);
+  });
+
+  it('rejects an already-cancelled booking without restoring seats', async () => {
+    const ride = createRide(1, 2);
+    const booking = createBooking(
+      'already-cancelled',
+      ride,
+      1,
+      BookingStatus.CANCELLED,
+    );
+    const mocks = createService(ride, [booking]);
+
+    await expect(
+      mocks.service.cancelBooking('passenger-already-cancelled', booking.id),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(1);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.CANCELLED,
+    );
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+    expect(mocks.bookingSave).not.toHaveBeenCalled();
+  });
+
+  it('allows only one concurrent cancellation to restore seats', async () => {
+    const ride = createRide(1, 2);
+    const booking = createBooking(
+      'double-cancel',
+      ride,
+      1,
+      BookingStatus.APPROVED,
+    );
+    const mocks = createService(ride, [booking]);
+
+    const results = await Promise.allSettled([
+      mocks.service.cancelBooking('passenger-double-cancel', booking.id),
+      mocks.service.cancelBooking('passenger-double-cancel', booking.id),
+    ]);
+
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const failures = results.filter((result) => result.status === 'rejected');
+    expect(failures).toHaveLength(1);
+    if (failures[0]?.status === 'rejected') {
+      expect(failures[0].reason).toBeInstanceOf(ConflictException);
+      expect(failures[0].reason.message).toContain('cancelled');
+    }
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.CANCELLED,
+    );
+    expect(mocks.rideSave).toHaveBeenCalledOnce();
+  });
+
+  it('rolls back seat restoration if saving the cancelled booking fails', async () => {
+    const ride = createRide(1, 2);
+    const booking = createBooking(
+      'cancel-save-failure',
+      ride,
+      1,
+      BookingStatus.APPROVED,
+    );
+    const mocks = createService(ride, [booking]);
+    mocks.bookingSave.mockRejectedValue(new Error('Booking save failed'));
+
+    await expect(
+      mocks.service.cancelBooking('passenger-cancel-save-failure', booking.id),
+    ).rejects.toThrow('Booking save failed');
+
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(1);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.APPROVED,
+    );
+  });
+
+  it.each(['cancel-first', 'approve-first'])(
+    'keeps seats consistent when cancellation races approval (%s)',
+    async (order) => {
+      const ride = createRide(0, 1);
+      const approvedBooking = createBooking(
+        'existing-approved',
+        ride,
+        1,
+        BookingStatus.APPROVED,
+      );
+      const pendingBooking = createBooking('competing-pending', ride, 1);
+      const mocks = createService(ride, [approvedBooking, pendingBooking]);
+
+      const cancellation = () =>
+        mocks.service.cancelBooking(
+          'passenger-existing-approved',
+          approvedBooking.id,
+        );
+      const approval = () =>
+        mocks.service.approveBooking(driverId, pendingBooking.id);
+      const results =
+        order === 'cancel-first'
+          ? await Promise.allSettled([cancellation(), approval()])
+          : await Promise.allSettled([approval(), cancellation()]);
+
+      const state = mocks.getCommittedState();
+      expect(
+        state.bookings.find((item) => item.id === approvedBooking.id)?.status,
+      ).toBe(BookingStatus.CANCELLED);
+      expect(state.ride.availableSeat).toBeGreaterThanOrEqual(0);
+      expect(state.ride.availableSeat).toBeLessThanOrEqual(
+        state.ride.totalSeat,
+      );
+      expect(mocks.lockOrder).toEqual([
+        'booking',
+        ...(order === 'cancel-first'
+          ? ['ride', 'booking', 'ride']
+          : ['ride', 'booking', 'ride']),
+      ]);
+
+      const approvalResult = order === 'cancel-first' ? results[1] : results[0];
+      if (order === 'cancel-first') {
+        expect(approvalResult.status).toBe('fulfilled');
+        expect(
+          state.bookings.find((item) => item.id === pendingBooking.id)?.status,
+        ).toBe(BookingStatus.APPROVED);
+        expect(state.ride.availableSeat).toBe(0);
+      } else {
+        expect(approvalResult.status).toBe('rejected');
+        expect(
+          state.bookings.find((item) => item.id === pendingBooking.id)?.status,
+        ).toBe(BookingStatus.PENDING);
+        expect(state.ride.availableSeat).toBe(1);
+      }
+    },
+  );
+
+  it('refuses seat restoration that would exceed total ride capacity', async () => {
+    const ride = createRide(2, 2);
+    const booking = createBooking(
+      'over-capacity-restore',
+      ride,
+      1,
+      BookingStatus.APPROVED,
+    );
+    const mocks = createService(ride, [booking]);
+
+    await expect(
+      mocks.service.cancelBooking(
+        'passenger-over-capacity-restore',
+        booking.id,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(mocks.getCommittedState().ride.availableSeat).toBe(2);
+    expect(mocks.getCommittedState().bookings[0].status).toBe(
+      BookingStatus.APPROVED,
+    );
+    expect(mocks.rideSave).not.toHaveBeenCalled();
+    expect(mocks.bookingSave).not.toHaveBeenCalled();
   });
 });
