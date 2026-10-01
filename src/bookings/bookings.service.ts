@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Booking, BookingStatus } from './booking.entity.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
 import { UserService } from '../users/user.service.js';
@@ -22,6 +22,7 @@ export class BookingService {
     private readonly rideRepository: Repository<Ride>,
 
     private readonly userService: UserService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -232,62 +233,65 @@ export class BookingService {
 
   //  Approve a pending booking.
   async approveBooking(driverId: string, bookingId: string): Promise<any> {
-    // Find the booking together with its ride and driver.
-    const booking = await this.bookingRepository.findOne({
-      where: {
-        id: bookingId,
-      },
-      relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+    return this.dataSource.transaction(async (manager) => {
+      const bookingRepository = manager.getRepository(Booking);
+      // Lock the booking to serialize repeat approvals of the same record.
+      const booking = await bookingRepository.findOne({
+        where: { id: bookingId },
+        relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!booking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      if (booking.status !== BookingStatus.PENDING) {
+        throw new ConflictException(
+          `Booking cannot be approved because its current status is "${booking.status}"`,
+        );
+      }
+
+      if (booking.ride.driver.id !== driverId) {
+        throw new ConflictException(
+          'You can only approve bookings for your own rides',
+        );
+      }
+
+      const rideRepository = manager.getRepository(Ride);
+      // Lock the shared ride row so competing bookings see the latest seat count.
+      const ride = await rideRepository.findOne({
+        where: { id: booking.ride.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!ride) {
+        throw new NotFoundException('Ride not found');
+      }
+
+      if (booking.seats > ride.availableSeat) {
+        throw new BadRequestException(
+          `Not enough available seats. Only ${ride.availableSeat} seat(s) remain`,
+        );
+      }
+
+      ride.availableSeat -= booking.seats;
+      booking.ride = ride;
+      booking.status = BookingStatus.APPROVED;
+
+      // Keep the seat decrement and booking status change in one transaction.
+      await rideRepository.save(ride);
+      await bookingRepository.save(booking);
+
+      return {
+        ...booking,
+        passenger: this.sanitizeUser(booking.passenger),
+        ride: {
+          ...ride,
+          driver: this.sanitizeUser(ride.driver),
+        },
+      };
     });
-
-    if (!booking) {
-      throw new NotFoundException('Booking not found');
-    }
-
-    // Only pending bookings can be approved.
-    if (booking.status !== BookingStatus.PENDING) {
-      throw new ConflictException(
-        `Booking cannot be approved because its current status is "${booking.status}"`,
-      );
-    }
-
-    // Make sure the authenticated driver owns the ride.
-    if (booking.ride.driver.id !== driverId) {
-      throw new ConflictException(
-        'You can only approve bookings for your own rides',
-      );
-    }
-
-    // Re-check the available seats.
-    //
-    // This is important because another booking may have been
-    // approved after this booking was originally created.
-    if (booking.seats > booking.ride.availableSeat) {
-      throw new BadRequestException(
-        `Not enough available seats. Only ${booking.ride.availableSeat} seat(s) remain`,
-      );
-    }
-
-    // Reduce the available seats.
-    booking.ride.availableSeat -= booking.seats;
-
-    // Change the booking status.
-    booking.status = BookingStatus.APPROVED;
-
-    // Save both changes.
-    await this.rideRepository.save(booking.ride);
-    await this.bookingRepository.save(booking);
-
-    // Remove sensitive information before returning the result.
-    return {
-      ...booking,
-      passenger: this.sanitizeUser(booking.passenger),
-
-      ride: {
-        ...booking.ride,
-        driver: this.sanitizeUser(booking.ride.driver),
-      },
-    };
   }
 
   //Reject PENDING bookng
