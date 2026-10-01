@@ -134,7 +134,10 @@ describe('DriverApplicationService response privacy', () => {
       role: 'driver',
     });
     await expect(
-      mocks.service.create(privateApplicant.id, {} as CreateDriverApplicationDto),
+      mocks.service.create(
+        privateApplicant.id,
+        {} as CreateDriverApplicationDto,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
 
     mocks.applicationRepository.findOne.mockResolvedValue({

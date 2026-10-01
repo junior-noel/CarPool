@@ -2,12 +2,15 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-    BadRequestException,
+  BadRequestException,
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PassengerApplication, PassengerApplicationStatus,} from './passenger-application.entity.js';
+import {
+  PassengerApplication,
+  PassengerApplicationStatus,
+} from './passenger-application.entity.js';
 import { CreatePassengerApplicationDto } from './dto/create-passenger-application.dto.js';
 import { UserService } from '../users/user.service.js';
 import { promises } from 'dns';
@@ -92,9 +95,7 @@ export class PassengerApplicationService {
     return this.toResponse(savedApplication);
   }
 
-  async approve(
-    applicationId: string,
-  ): Promise<PassengerApplicationResponse> {
+  async approve(applicationId: string): Promise<PassengerApplicationResponse> {
     // Find the passenger application and load the related user.
     const application = await this.applicationRepository.findOne({
       where: {

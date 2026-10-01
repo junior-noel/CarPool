@@ -1,4 +1,12 @@
-import { Body, Controller, Patch, Post, Req, UseGuards, Param, } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+  Param,
+} from '@nestjs/common';
 import { PassengerApplicationService } from './passenger-application.service.js';
 import { CreatePassengerApplicationDto } from './dto/create-passenger-application.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -13,7 +21,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PassengerGuard } from './guards/passenger.guard.js';
-
 
 @ApiTags('Passenger Application')
 @ApiBearerAuth()

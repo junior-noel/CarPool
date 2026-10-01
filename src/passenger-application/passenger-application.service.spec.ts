@@ -77,9 +77,7 @@ describe('PassengerApplicationService response privacy', () => {
 
     const response = await mocks.service.create(privateApplicant.id, dto);
 
-    expectSafePassengerResponse(
-      response as unknown as Record<string, unknown>,
-    );
+    expectSafePassengerResponse(response as unknown as Record<string, unknown>);
     expect(response).toMatchObject({
       id: 'passenger-application-id',
       status: PassengerApplicationStatus.PENDING,
@@ -115,9 +113,7 @@ describe('PassengerApplicationService response privacy', () => {
 
     const response = await mocks.service.approve(application.id);
 
-    expectSafePassengerResponse(
-      response as unknown as Record<string, unknown>,
-    );
+    expectSafePassengerResponse(response as unknown as Record<string, unknown>);
     expect(response.status).toBe(PassengerApplicationStatus.APPROVED);
     expect(response.reviewedAt).toBeInstanceOf(Date);
     expect(application.rejectionReason).toBeNull();
