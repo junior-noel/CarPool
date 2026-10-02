@@ -27,5 +27,7 @@ import { AuthModule } from '../auth/auth.module.js';
 
   controllers: [BookingController],
   providers: [BookingService],
+  // Exposed so TravelModule can reuse the request-reopen rule.
+  exports: [BookingService],
 })
 export class BookingModule {}

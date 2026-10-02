@@ -16,11 +16,11 @@ import { UserService } from '../users/user.service.js';
 import { CreateRideDto } from './dto/create-ride-dto.js';
 import { SearchRidesDto } from './dto/search-rides.dto.js';
 
-/**
- * Raw row shape returned by the search query builder.
- * Fields typed as `string | number` because PostgreSQL numeric columns
- * come back as strings; the service normalizes them with Number().
- */
+
+  //Raw row shape returned by the search query builder.
+ // Fields typed as `string | number` because PostgreSQL numeric columns
+ // come back as strings; the service normalizes them with Number().
+ 
 interface SearchRideRow {
   id: string;
   origin: string;
@@ -37,11 +37,8 @@ interface SearchRideRow {
   vehicleCapacity: string | number;
 }
 
-/**
- * Public shape of a ride returned by the search endpoint.
- * Normalizes row types, nests driver/vehicle, and exposes only safe fields.
- */
-
+// Public shape of a ride returned by the search endpoint.
+ // Normalizes row types, nests driver/vehicle, and exposes only safe fields.
 export interface SearchRideItem {
   id: string;
   origin: string;
@@ -55,9 +52,8 @@ export interface SearchRideItem {
   vehicle: { model: string; color: string; capacity: number };
 }
 
-/**
- * Paginated envelope for search results, including total count and page metadata.
- */ export interface SearchRidesResult {
+ //Paginated envelope for search results, including total count and page metadata.
+ export interface SearchRidesResult {
   items: SearchRideItem[];
   total: number;
   page: number;

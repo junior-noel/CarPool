@@ -15,14 +15,7 @@ import { User } from '../users/user.entity.js';
 import { Ride } from '../rides/ride.entity.js';
 import { RideRequest } from '../ride-request/ride-request.entity.js';
 
-/**
- * Represents the current state of a booking.
- *
- * PENDING   → Passenger has requested seats and is waiting for the driver.
- * APPROVED  → Driver accepted the booking.
- * REJECTED  → Driver rejected the booking.
- * CANCELLED → Booking was cancelled.
- */
+// Represents the current state of a booking.
 export enum BookingStatus {
   PENDING = 'pending',
   APPROVED = 'approved',

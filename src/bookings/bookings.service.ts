@@ -29,24 +29,20 @@ export class BookingService {
     private readonly dataSource: DataSource,
   ) {}
 
-  /**
-   * Removes sensitive information from a User object
-   * before it is returned through the API.
-   *
-   * Password hashes must never be exposed to the client.
-   */
+  // Removes sensitive information from a User object before it is returned through the API.
+  // Password hashes must never be exposed to the client.
   private sanitizeUser(user: any) {
     if (!user) {
       return user;
     }
-
     const { password, ...safeUser } = user;
-
     return safeUser;
   }
 
-  // Reopen only after locking the request and confirming no other active booking remains.
-  private async reopenRequestIfNoOtherActiveBookings(
+  // Reopen a linked request (clearing its ride) only after locking the request
+  // and confirming no other active booking remains. Public so other services
+  // (e.g. TravelService when rejecting bookings on start) reuse this exact rule.
+  async reopenRequestIfNoOtherActiveBookings(
     manager: EntityManager,
     booking: Booking,
   ): Promise<void> {
@@ -357,13 +353,7 @@ export class BookingService {
 
       const booking = await bookingRepository.findOne({
         where: { id: bookingId },
-        relations: [
-          'passenger',
-          'ride',
-          'ride.vehicle',
-          'ride.driver',
-          'rideRequest',
-        ],
+        relations: ['passenger', 'ride', 'ride.vehicle', 'ride.driver', 'rideRequest', ],
       });
 
       if (!booking) {
@@ -416,13 +406,7 @@ export class BookingService {
 
       const booking = await bookingRepository.findOne({
         where: { id: bookingId },
-        relations: [
-          'passenger',
-          'ride',
-          'ride.vehicle',
-          'ride.driver',
-          'rideRequest',
-        ],
+        relations: ['passenger', 'ride','ride.vehicle','ride.driver', 'rideRequest',],
       });
 
       if (!booking) {
