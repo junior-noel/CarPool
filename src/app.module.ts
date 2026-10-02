@@ -22,6 +22,8 @@ import { Booking } from './bookings/booking.entity.js';
 import { Travel } from './travel/travel.entity.js';
 import { TravelModule } from './travel/travel.module.js';
 import { Otp } from './otp/otp-entity.js';
+import { MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -67,4 +69,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule{
+  configure(consumer: MiddlewareConsumer) {
+      consumer.apply(LoggerMiddleware).forRoutes("*")
+  }
+}

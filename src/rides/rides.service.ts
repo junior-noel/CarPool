@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import {BadRequestException,ForbiddenException, Injectable, NotFoundException,} from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -240,26 +235,16 @@ export class RidesService {
     // Create the ride using the information from the DTO.
     const ride = this.rideRepository.create({
       origin: createRideDto.origin,
-
       destination: createRideDto.destination,
 
       // Convert the date received from the request into a JavaScript Date object.
       departureDate: new Date(createRideDto.departureDate),
-
       departureTime: createRideDto.departureTime,
-
-      // The total number of seats comes from the vehicle. We don't allow the client to invent this value.
       totalSeat: vehicle.seats,
-
-      // Number of seats the driver makes availableto passengers.
       availableSeat: createRideDto.availableSeats,
-
-      // Map the DTO field to the entity field.
       seatPerPrice: createRideDto.pricePerSeat,
-
       // The authenticated user becomes the driver.
       driver,
-
       // The selected vehicle is associated with the ride.
       vehicle,
     });

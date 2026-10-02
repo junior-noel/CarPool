@@ -111,7 +111,6 @@ export class BookingController {
   ) {
     const bookingId = id;
     const driverId = request.user.userId;
-
     return this.bookingService.approveBooking(driverId, bookingId);
   }
 
