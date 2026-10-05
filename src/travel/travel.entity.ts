@@ -44,6 +44,13 @@ export class Travel {
   })
   startedAt: Date;
 
+  // When the driver completed the journey; null until the travel is completed.
+  @Column({
+    type: 'timestamptz',
+    nullable: true,
+  })
+  completedAt: Date | null;
+
   // Copied from the ride at start time so the travel is stable even if the
   // ride's route fields are ever edited.
   @Column()

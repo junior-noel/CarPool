@@ -16,7 +16,7 @@ import { Vehicle } from './vehicle.entity.js';
 
 @ApiTags('Vehicle')
 @ApiBearerAuth()
-@Controller('vehicle')
+@Controller('vehicles')
 export class VehicleController {
   constructor(private readonly vehicleService: VehicleService) {}
 

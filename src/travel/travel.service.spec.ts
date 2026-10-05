@@ -5,7 +5,7 @@ import {
 import type { ConfigService } from '@nestjs/config';
 import type { DataSource, EntityManager, Repository } from 'typeorm';
 
-import { Travel } from './travel.entity.js';
+import { Travel, TravelStatus } from './travel.entity.js';
 import { TravelService } from './travel.service.js';
 import { departureTimestampMs } from '../common/time/time.util.js';
 import { Ride, RideStatus } from '../rides/ride.entity.js';
@@ -343,8 +343,13 @@ describe('TravelService.startTravel', () => {
     expect((result as { driver: Record<string, unknown> }).driver).not.toHaveProperty(
       'password',
     );
-    // Lock order: bookings (by id) + their requests, then the ride.
-    expect(mocks.lockOrder).toEqual(['booking', 'request', 'booking', 'ride']);
+    // Lock order: all pending bookings (by id), then their requests, then the ride.
+    expect(mocks.lockOrder).toEqual([
+      'booking',
+      'booking',
+      'request',
+      'ride',
+    ]);
     expect(mocks.rideLockOptions).toEqual([{ mode: 'pessimistic_write' }]);
   });
 
@@ -397,6 +402,147 @@ describe('TravelService.startTravel', () => {
     await expect(
       tight.service.startTravel(rideId, driverId, inWindow),
     ).resolves.toBeDefined();
+  });
+});
+
+describe('TravelService.endTravel', () => {
+  const completedAt = new Date('2026-10-15T15:00:00Z');
+
+  // An in-progress travel for the default ride; status/links overridable.
+  function makeTravel(overrides: Partial<Travel> = {}): Travel {
+    return {
+      id: 't-1',
+      status: TravelStatus.IN_PROGRESS,
+      startedAt: new Date('2026-10-15T11:00:00Z'),
+      completedAt: null,
+      origin: 'Yaounde',
+      destination: 'Douala',
+      driver: { id: driverId, password: 'hash' } as User,
+      ride: { id: rideId } as Ride,
+      ...overrides,
+    } as Travel;
+  }
+
+  it('completes the travel and ride, rejects pending, keeps approved, and reopens a lone request', async () => {
+    const ride = makeRide({ status: RideStatus.ONGOING });
+    const pendingLinked = makeBooking('b-1', {
+      rideRequest: makeRequest('r-1'),
+    });
+    const approved = makeBooking('a-1', { status: BookingStatus.APPROVED });
+    const mocks = createService(
+      ride,
+      [pendingLinked, approved],
+      [makeRequest('r-1')],
+      [makeTravel()],
+    );
+
+    const result = await mocks.service.endTravel(rideId, driverId, completedAt);
+
+    const state = mocks.getCommittedState();
+    expect(state.ride.status).toBe(RideStatus.COMPLETED);
+    expect(result).toMatchObject({
+      id: 't-1',
+      status: 'completed',
+      completedAt,
+    });
+    expect(state.travels.find((t) => t.id === 't-1')?.status).toBe(
+      TravelStatus.COMPLETED,
+    );
+    // Pending rejected; the approved passenger stays approved.
+    expect(state.bookings.find((b) => b.id === 'b-1')?.status).toBe(
+      BookingStatus.REJECTED,
+    );
+    expect(state.bookings.find((b) => b.id === 'a-1')?.status).toBe(
+      BookingStatus.APPROVED,
+    );
+    // The lone linked request reopens once no active booking remains on it.
+    expect(state.requests.find((r) => r.id === 'r-1')?.status).toBe(
+      RideRequestStatus.OPEN,
+    );
+    // No password leak in the returned payload.
+    expect((result as { driver: Record<string, unknown> }).driver).not.toHaveProperty(
+      'password',
+    );
+    // Lock order: booking -> request, then the ride.
+    expect(mocks.lockOrder).toEqual(['booking', 'request', 'ride']);
+    expect(mocks.rideLockOptions).toEqual([{ mode: 'pessimistic_write' }]);
+  });
+
+  it('does not reopen the request of an approved booking when the travel completes', async () => {
+    const ride = makeRide({ status: RideStatus.ONGOING });
+    const pendingLinked = makeBooking('b-1', {
+      rideRequest: makeRequest('r-1'),
+    });
+    const approvedLinked = makeBooking('a-1', {
+      status: BookingStatus.APPROVED,
+      rideRequest: makeRequest('r-2'),
+    });
+    const mocks = createService(
+      ride,
+      [pendingLinked, approvedLinked],
+      [makeRequest('r-1'), makeRequest('r-2')],
+      [makeTravel()],
+    );
+
+    await mocks.service.endTravel(rideId, driverId, completedAt);
+
+    const state = mocks.getCommittedState();
+    // The rejected pending booking reopens its request...
+    expect(state.requests.find((r) => r.id === 'r-1')?.status).toBe(
+      RideRequestStatus.OPEN,
+    );
+    // ...but the approved booking's request stays accepted (not reopened).
+    expect(state.requests.find((r) => r.id === 'r-2')?.status).toBe(
+      RideRequestStatus.ACCEPTED,
+    );
+    expect(state.bookings.find((b) => b.id === 'a-1')?.status).toBe(
+      BookingStatus.APPROVED,
+    );
+  });
+
+  it('refuses to end a ride the caller does not drive', async () => {
+    const ride = makeRide({
+      status: RideStatus.ONGOING,
+      driver: { id: 'someone-else' } as User,
+    });
+    const mocks = createService(ride, [], [], [makeTravel()]);
+
+    await expect(
+      mocks.service.endTravel(rideId, driverId, completedAt),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(mocks.dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses to end a ride that is not ongoing', async () => {
+    const ride = makeRide({ status: RideStatus.SCHEDULED });
+    const mocks = createService(ride, [], [], [makeTravel()]);
+
+    await expect(
+      mocks.service.endTravel(rideId, driverId, completedAt),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(mocks.dataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses to complete a travel that is not in progress', async () => {
+    const ride = makeRide({ status: RideStatus.ONGOING });
+    const mocks = createService(ride, [], [], [
+      makeTravel({ status: TravelStatus.COMPLETED }),
+    ]);
+
+    await expect(
+      mocks.service.endTravel(rideId, driverId, completedAt),
+    ).rejects.toBeInstanceOf(ConflictException);
+    // The transaction aborts, so the ride stays ongoing.
+    expect(mocks.getCommittedState().ride.status).toBe(RideStatus.ONGOING);
+  });
+
+  it('refuses to end a ride that has no travel', async () => {
+    const ride = makeRide({ status: RideStatus.ONGOING });
+    const mocks = createService(ride, [], [], []);
+
+    await expect(
+      mocks.service.endTravel(rideId, driverId, completedAt),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });
 

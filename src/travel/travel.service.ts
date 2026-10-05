@@ -9,6 +9,7 @@ import { Booking, BookingStatus } from '../bookings/booking.entity.js';
 import { BookingService } from '../bookings/bookings.service.js';
 import { departureTimestampMs, isWithinDepartureWindow, readWindowMinutes, resolveAppTimezone,} from '../common/time/time.util.js';
 
+// Config keys + fallback defaults for the valid time window around travel start (30 min before, 120 min after).
 const WINDOW_BEFORE_KEY = 'TRAVEL_START_WINDOW_BEFORE_MINUTES';
 const WINDOW_AFTER_KEY = 'TRAVEL_START_WINDOW_AFTER_MINUTES';
 const DEFAULT_BEFORE_MINUTES = 30;
@@ -193,6 +194,130 @@ export class TravelService {
 
       // 4. Mark the ride ongoing and persist it.
       lockedRide.status = RideStatus.ONGOING;
+      await rideRepository.save(lockedRide);
+
+      // Return the travel without leaking the driver's password.
+      const { password, ...safeDriver } = travel.driver;
+
+      return {
+        ...travel,
+        driver: safeDriver,
+      };
+    });
+  }
+
+  /**
+   * End the travel for an ongoing ride. In one transaction it:
+   *   1. rejects every still-pending booking (passengers who never boarded),
+   *      reusing the shared request-reopen rule;
+   *   2. completes the Travel (status -> completed, completedAt set);
+   *   3. marks the ride completed.
+   *
+   * Approved bookings are left untouched - they are the travel's passengers.
+   * Completing an already-completed (or cancelled) travel fails with a 409.
+   *
+   * Lock order: pending bookings (ordered by id) and their ride requests first,
+   * then the ride row last. Because a ride has at most one travel, holding the
+   * ride lock also serializes concurrent "end" calls, preventing double
+   * completion. The ride is never locked while a booking or request lock is
+   * being acquired, keeping this deadlock-free against approve/cancel/reject.
+   */
+  async endTravel(rideId: string, driverId: string, now = new Date()) {
+    // Fast pre-checks (no locks) so clearly invalid requests fail cheaply.
+    const ride = await this.rideRepository.findOne({
+      where: { id: rideId },
+      relations: ['driver'],
+    });
+
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+
+    if (ride.driver.id !== driverId) {
+      throw new ConflictException('You can only end your own ride');
+    }
+
+    if (ride.status !== RideStatus.ONGOING) {
+      throw new ConflictException('Only an ongoing ride can be ended');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const bookingRepository = manager.getRepository(Booking);
+      const rideRepository = manager.getRepository(Ride);
+      const travelRepository = manager.getRepository(Travel);
+
+      // 1. Reject every still-pending booking (it did not board). Lock the rows
+      //    alone (no relation joins) ordered by id, then load each booking's
+      //    nullable rideRequest in a second query before applying the shared
+      //    reopen rule. Only PENDING rows are selected, so approved bookings
+      //    (and their requests) are never touched here.
+      const pendingBookings = await bookingRepository.find({
+        where: {
+          ride: { id: rideId },
+          status: BookingStatus.PENDING,
+        },
+        order: { id: 'ASC' },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      for (const locked of pendingBookings) {
+        const booking = await bookingRepository.findOne({
+          where: { id: locked.id },
+          relations: ['rideRequest'],
+        });
+
+        if (!booking) {
+          continue;
+        }
+
+        booking.status = BookingStatus.REJECTED;
+        await bookingRepository.save(booking);
+
+        // Single source of truth for the request-reopen rule.
+        await this.bookingService.reopenRequestIfNoOtherActiveBookings(
+          manager,
+          booking,
+        );
+      }
+
+      // 2. Lock the ride row last (no relation joins), then re-validate under the
+      //    lock. Since a ride has at most one travel, this lock also prevents a
+      //    concurrent "end" from racing past the travel status check below.
+      const lockedRide = await rideRepository.findOne({
+        where: { id: rideId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!lockedRide) {
+        throw new NotFoundException('Ride not found');
+      }
+
+      if (lockedRide.status !== RideStatus.ONGOING) {
+        throw new ConflictException('Only an ongoing ride can be ended');
+      }
+
+      // 3. Load the travel under the ride lock (relations loaded in a separate
+      //    query, never in a locking query) and confirm it exists and is still
+      //    in progress. A completed/cancelled travel means it was already ended.
+      const travel = await travelRepository.findOne({
+        where: { ride: { id: rideId } },
+        relations: ['driver'],
+      });
+
+      if (!travel) {
+        throw new ConflictException('No travel exists for this ride');
+      }
+
+      if (travel.status !== TravelStatus.IN_PROGRESS) {
+        throw new ConflictException('This travel has already been completed');
+      }
+
+      // 4. Complete the travel and the ride atomically.
+      travel.status = TravelStatus.COMPLETED;
+      travel.completedAt = now;
+      await travelRepository.save(travel);
+
+      lockedRide.status = RideStatus.COMPLETED;
       await rideRepository.save(lockedRide);
 
       // Return the travel without leaking the driver's password.

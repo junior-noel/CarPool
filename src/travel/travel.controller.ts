@@ -46,4 +46,14 @@ export class TravelController {
 
     return this.travelService.startTravel(rideId, driverId);
   }
+
+  @UseGuards(JwtAuthGuard, DriverGuard)
+  @Post(':rideId/end')
+  endTravel(
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    const driverId = request.user.userId;
+    return this.travelService.endTravel(rideId, driverId);
+  }
 }
