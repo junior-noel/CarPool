@@ -296,12 +296,14 @@ export class TravelService {
         throw new ConflictException('Only an ongoing ride can be ended');
       }
 
-      // 3. Load the travel under the ride lock (relations loaded in a separate
-      //    query, never in a locking query) and confirm it exists and is still
+      // 3. Load the travel under the ride lock and confirm it exists and is still
       //    in progress. A completed/cancelled travel means it was already ended.
+      //    No relation joins: the travel's `driver` OneToOne has no owning
+      //    @JoinColumn, so loading it makes TypeORM fail in createJoinExpression
+      //    ("Cannot read 'joinColumns' of undefined"). The driver is taken from
+      //    the ride instead (it does not own a reliable driver FK of its own).
       const travel = await travelRepository.findOne({
         where: { ride: { id: rideId } },
-        relations: ['driver'],
       });
 
       if (!travel) {
@@ -320,8 +322,9 @@ export class TravelService {
       lockedRide.status = RideStatus.COMPLETED;
       await rideRepository.save(lockedRide);
 
-      // Return the travel without leaking the driver's password.
-      const { password, ...safeDriver } = travel.driver;
+      // The travel does not own a reliable driver FK, so report the ride's driver
+      // (already loaded in the pre-check above) without leaking its password.
+      const { password, ...safeDriver } = ride.driver;
 
       return {
         ...travel,
