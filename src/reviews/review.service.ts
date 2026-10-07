@@ -1,15 +1,15 @@
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-
 import {
   BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import { Review } from './review.entity.js';
 import { CreateReviewDto } from './dto/create-review.dto.js';
+
 import { Travel, TravelStatus } from '../travel/travel.entity.js';
 import { Booking, BookingStatus } from '../bookings/booking.entity.js';
 import { User } from '../users/user.entity.js';
@@ -20,15 +20,12 @@ export class ReviewService {
     @InjectRepository(Review)
     private readonly reviewRepository: Repository<Review>,
 
-    // Used to verify that the travel exists and is completed.
     @InjectRepository(Travel)
     private readonly travelRepository: Repository<Travel>,
 
-    // Used to verify that the reviewer actually participated in the travel.
     @InjectRepository(Booking)
     private readonly bookingRepository: Repository<Booking>,
 
-    // Used to verify that the reviewed user exists.
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {}
@@ -42,14 +39,14 @@ export class ReviewService {
       isAnonymous = false,
     } = createReviewDto;
 
-    // 1. Make sure the reviewer and reviewed user are different.
+    // A user cannot review themselves.
     if (reviewerId === reviewedUserId) {
       throw new BadRequestException('You cannot review yourself.');
     }
 
-    // 2. Find the travel and load the ride + driver.
-    
-    // We need the ride because the ride tells us who the driver of this travel was.
+    // ---------------------------------------------------------
+    // 1. Find the travel
+    // ---------------------------------------------------------
     const travel = await this.travelRepository.findOne({
       where: { id: travelId },
       relations: ['ride', 'ride.driver'],
@@ -59,12 +56,14 @@ export class ReviewService {
       throw new NotFoundException('Travel not found.');
     }
 
-    // 3. A review can only be created after the travel is completed.
+    // Reviews are only allowed after the travel has been completed.
     if (travel.status !== TravelStatus.COMPLETED) {
       throw new BadRequestException('You can only review a completed travel.');
     }
 
-    // 4. Make sure the reviewed user actually exists.
+    // ---------------------------------------------------------
+    // 2. Find the user being reviewed
+    // ---------------------------------------------------------
     const reviewedUser = await this.userRepository.findOne({
       where: { id: reviewedUserId },
     });
@@ -73,94 +72,132 @@ export class ReviewService {
       throw new NotFoundException('Reviewed user not found.');
     }
 
-    // 5. Find an APPROVED booking for this reviewer on the ride belonging to this travel.
-    //
-    // This proves that the reviewer actually participated in the completed travel.
-    const approvedBooking = await this.bookingRepository.findOne({
-      where: {
-        passenger: { id: reviewerId },
-        ride: { id: travel.ride.id },
-        status: BookingStatus.APPROVED,
-      },
-      relations: ['passenger', 'ride', 'ride.driver'],
-    });
-
-    // The reviewer must have participated in the travel.
-    if (!approvedBooking) {
-      throw new BadRequestException('You did not participate in this travel.');
-    }
-    //-------------------------------------------------------
-    // 6. Determine who the reviewer is allowed to review.
-    //
-    // In the current model:
-    //
-    // Passenger → Driver
-    // Driver    → Passenger
-    //
-    // The driver's identity comes from ride.driver.
-    // The passenger's identity comes from the approved booking.
-    // ---------------------------------------------------------
+    // The driver is obtained directly from the ride.
     const driverId = travel.ride.driver.id;
-    const passengerId = approvedBooking.passenger.id;
 
-    const isReviewingDriver = reviewedUserId === driverId;
-    const isReviewingPassenger = reviewedUserId === passengerId;
-
-    if (!isReviewingDriver && !isReviewingPassenger) {
-      throw new BadRequestException( 'You can only review a participant of this travel.', );
-    }
-
-    // ---------------------------------------------------------
-    // 7. Make sure the reviewer is actually one of the two
-    //    participants involved in this review.
-    // ---------------------------------------------------------
-    const isPassenger = reviewerId === passengerId;
+    // Determine whether the authenticated user is the driver.
     const isDriver = reviewerId === driverId;
 
-    if (!isPassenger && !isDriver) {
-      throw new BadRequestException('You did not participate in this travel.');
+    // We will use this to verify passenger participation.
+    let approvedBooking: Booking | null = null;
+
+    // ---------------------------------------------------------
+    // 3. Verify that the reviewer participated in the travel
+    // ---------------------------------------------------------
+
+    if (isDriver) {
+      // -------------------------------------------------------
+      // DRIVER → PASSENGER
+      // -------------------------------------------------------
+      //
+      // The driver does not have a booking.
+      // Instead, we verify that the person being reviewed has
+      // an approved booking on this ride.
+      //
+
+      approvedBooking = await this.bookingRepository.findOne({
+        where: {
+          passenger: { id: reviewedUserId },
+          ride: { id: travel.ride.id },
+          status: BookingStatus.APPROVED,
+        },
+        relations: ['passenger'],
+      });
+
+      if (!approvedBooking) {
+        throw new BadRequestException(
+          'The user you are reviewing did not participate in this travel.',
+        );
+      }
+    } else {
+      // -------------------------------------------------------
+      // PASSENGER → DRIVER
+      // -------------------------------------------------------
+      //
+      // The reviewer must have an approved booking on this ride.
+      //
+
+      approvedBooking = await this.bookingRepository.findOne({
+        where: {
+          passenger: { id: reviewerId },
+          ride: { id: travel.ride.id },
+          status: BookingStatus.APPROVED,
+        },
+        relations: ['passenger'],
+      });
+
+      if (!approvedBooking) {
+        throw new BadRequestException(
+          'You did not participate in this travel.',
+        );
+      }
+
+      // A passenger can only review the driver.
+      if (reviewedUserId !== driverId) {
+        throw new BadRequestException(
+          'A passenger can only review the driver.',
+        );
+      }
     }
 
     // ---------------------------------------------------------
-    // 8. Prevent a passenger from reviewing another passenger,
-    //    and prevent the driver from reviewing another driver.
-    //
-    // Passenger must review driver.
-    // Driver must review passenger.
+    // 4. Make sure the reviewed user is actually a participant
     // ---------------------------------------------------------
-    if (isPassenger && !isReviewingDriver) {
-      throw new BadRequestException('A passenger can only review the driver.');
+
+    if (isDriver) {
+      // If the reviewer is the driver, the reviewed user must
+      // be the passenger found through the approved booking.
+      if (approvedBooking.passenger.id !== reviewedUserId) {
+        throw new BadRequestException(
+          'You can only review a passenger who participated in this travel.',
+        );
+      }
+    } else {
+      // If the reviewer is the passenger, the reviewed user
+      // must already have been verified as the driver above.
+      if (reviewedUserId !== driverId) {
+        throw new BadRequestException(
+          'You can only review the driver of this travel.',
+        );
+      }
     }
 
-    if (isDriver && !isReviewingPassenger) {
-      throw new BadRequestException('A driver can only review the passenger.');
-    }
+    // ---------------------------------------------------------
+    // 5. Prevent duplicate reviews
+    // ---------------------------------------------------------
+    //
+    // One reviewer can review the same user only once for
+    // the same travel.
+    //
+    // This allows:
+    //
+    // Driver → Passenger A
+    // Driver → Passenger B
+    //
+    // while preventing:
+    //
+    // Driver → Passenger A
+    // Driver → Passenger A   ❌
+    //
 
-    // ---------------------------------------------------------
-    // 9. Prevent duplicate reviews.
-    //
-    // The entity also has a database-level unique constraint on:
-    // travel + reviewer
-    //
-    // This application-level check gives the user a clean error.
-    // ---------------------------------------------------------
     const existingReview = await this.reviewRepository.findOne({
       where: {
         travel: { id: travelId },
         reviewer: { id: reviewerId },
+        reviewedUser: { id: reviewedUserId },
       },
     });
 
     if (existingReview) {
-      throw new ConflictException('You have already reviewed this travel.');
+      throw new ConflictException(
+        'You have already reviewed this user for this travel.',
+      );
     }
 
     // ---------------------------------------------------------
-    // 10. Create the review.
-    //
-    // reviewerId comes from the authenticated user, NOT from
-    // the request body.
+    // 6. Create the review
     // ---------------------------------------------------------
+
     const review = this.reviewRepository.create({
       reviewer: { id: reviewerId },
       reviewedUser: { id: reviewedUserId },
@@ -171,8 +208,9 @@ export class ReviewService {
     });
 
     // ---------------------------------------------------------
-    // 11. Save the review.
+    // 7. Save the review
     // ---------------------------------------------------------
+
     const savedReview = await this.reviewRepository.save(review);
 
     return savedReview;

@@ -16,7 +16,7 @@ import { Travel } from '../travel/travel.entity.js';
 import { ReviewStatus } from './enums/review-status.enum.js';
 
 @Entity('reviews')
-@Unique(['travel', 'reviewer'])
+@Unique(['travel', 'reviewer', 'reviewedUser'])
 export class Review {
   // Unique identifier for the review.
   @PrimaryGeneratedColumn('uuid')

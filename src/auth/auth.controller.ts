@@ -81,7 +81,7 @@ export class AuthController {
         email: {
           type: 'string',
           format: 'email',
-          example: 'user@example.com',
+          example: 'mbishitech5@gmail.com',
         },
         otp: {
           type: 'string',

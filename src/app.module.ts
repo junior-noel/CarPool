@@ -25,6 +25,7 @@ import { Otp } from './otp/otp-entity.js';
 import { MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 import { ReviewModule } from './reviews/review.module.js';
+import { Review } from './reviews/review.entity.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -50,6 +51,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     PassengerApplicationModule,
     BookingModule,
     TravelModule,
+    ReviewModule,
 
     //NestJS module configuration that connect the aplcation to the database
     TypeOrmModule.forRoot({
@@ -70,7 +72,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
         Booking,
         Otp,
         Travel,
-        ReviewModule,
+        Review,
       ],
       synchronize: true,
     }),
