@@ -24,12 +24,12 @@ import { TravelModule } from './travel/travel.module.js';
 import { Otp } from './otp/otp-entity.js';
 import { MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
+import { ReviewModule } from './reviews/review.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
-
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -51,8 +51,6 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     BookingModule,
     TravelModule,
 
-   
-
     //NestJS module configuration that connect the aplcation to the database
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -62,15 +60,26 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       password: 'postgresql',
       database: 'CarPool',
       //TypeORM knows about the database table
-      entities: [User, Vehicle, DriverApplication, Ride, RideRequest, PassengerApplication, Booking, Otp, Travel],
+      entities: [
+        User,
+        Vehicle,
+        DriverApplication,
+        Ride,
+        RideRequest,
+        PassengerApplication,
+        Booking,
+        Otp,
+        Travel,
+        ReviewModule,
+      ],
       synchronize: true,
     }),
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule implements NestModule{
+export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-      consumer.apply(LoggerMiddleware).forRoutes("*")
+    consumer.apply(LoggerMiddleware).forRoutes('*');
   }
 }
