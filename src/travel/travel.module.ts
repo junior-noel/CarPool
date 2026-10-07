@@ -8,9 +8,7 @@ import { TravelService } from './travel.service.js';
 import { Ride } from '../rides/ride.entity.js';
 import { BookingModule } from '../bookings/bookings.module.js';
 
-// Only depends on BookingModule (for the shared request-reopen rule) and its
-// own feature repositories, so there is no circular import with the other
-// feature modules.
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Travel, Ride]),
