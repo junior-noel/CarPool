@@ -26,6 +26,7 @@ import { MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { LoggerMiddleware } from './common/middleware/logger.middleware.js';
 import { ReviewModule } from './reviews/review.module.js';
 import { Review } from './reviews/review.entity.js';
+import { ReviewLike } from './reviews/review-like.entity.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -73,6 +74,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
         Otp,
         Travel,
         Review,
+        ReviewLike
       ],
       synchronize: true,
     }),

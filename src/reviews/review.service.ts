@@ -16,6 +16,7 @@ import { Booking, BookingStatus } from '../bookings/booking.entity.js';
 import { User } from '../users/user.entity.js';
 import { ReviewStatus } from './enums/review-status.enum.js';
 import { UpdateReviewDto } from './dto/update-review.dto.js';
+import { ReviewLike } from './review-like.entity.js';
 
 @Injectable()
 export class ReviewService {
@@ -31,6 +32,9 @@ export class ReviewService {
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+
+    @InjectRepository(ReviewLike)
+    private readonly reviewLikeRepository: Repository<ReviewLike>,
   ) {}
 
   async createReview(reviewerId: string, createReviewDto: CreateReviewDto) {
@@ -395,5 +399,74 @@ export class ReviewService {
     review.deletedAt = new Date();
 
     return this.reviewRepository.save(review);
+  }
+
+  async likeReview(reviewId: string, userId: string) {
+    // Make sure the review exists and is not deleted.
+    const review = await this.reviewRepository.findOne({
+      where: {
+        id: reviewId,
+      },
+      relations: ['reviewer'],
+    });
+
+    if (!review) {
+      throw new NotFoundException('Review not found.');
+    }
+
+    // Deleted reviews cannot be liked.
+    if (review.status === ReviewStatus.DELETED) {
+      throw new BadRequestException('Deleted reviews cannot be liked.');
+    }
+
+    // A user cannot like their own review.
+    if (review.reviewer.id === userId) {
+      throw new BadRequestException('You cannot like your own review.');
+    }
+
+    // Check whether this user has already liked the review.
+    const existingLike = await this.reviewLikeRepository.findOne({
+      where: {
+        review: { id: reviewId },
+        user: { id: userId },
+      },
+    });
+
+    if (existingLike) {
+      throw new ConflictException('You have already liked this review.');
+    }
+
+    // Create the like.
+    const like = this.reviewLikeRepository.create({
+      review,
+      user: { id: userId } as User,
+    });
+
+    await this.reviewLikeRepository.save(like);
+
+    return {
+      message: 'Review liked successfully.',
+    };
+  }
+
+  async unlikeReview(reviewId: string, userId: string) {
+    // Find the user's like for this review.
+    const like = await this.reviewLikeRepository.findOne({
+      where: {
+        review: { id: reviewId },
+        user: { id: userId },
+      },
+    });
+
+    if (!like) {
+      throw new NotFoundException('Like not found.');
+    }
+
+    // Remove the like.
+    await this.reviewLikeRepository.remove(like);
+
+    return {
+      message: 'Review unliked successfully.',
+    };
   }
 }

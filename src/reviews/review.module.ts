@@ -8,10 +8,11 @@ import { Booking } from '../bookings/booking.entity.js';
 import { User } from '../users/user.entity.js';
 import { ReviewController } from './review.controller.js';
 import { PassportModule } from '@nestjs/passport';
+import { ReviewLike } from './review-like.entity.js';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Review, Travel, Booking, User]),
+        TypeOrmModule.forFeature([Review, Travel, Booking, User, ReviewLike]),
 
          // Provides the Passport functionality required by JwtAuthGuard.
      PassportModule.register({

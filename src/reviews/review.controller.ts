@@ -7,7 +7,8 @@ import {
   Param,
     UseGuards,
   Patch,
-  Delete
+  Delete,
+  Request
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -184,5 +185,66 @@ export class ReviewController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.reviewService.deleteReview(id, req.user.userId);
+  }
+
+  @Post(':id/like')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Like a review',
+    description: 'Allows an authenticated user to like a review.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID of the review to like',
+    type: String,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Review liked successfully.',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'User cannot like their own review or the review cannot be liked.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Review not found.',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'User has already liked this review.',
+  })
+  async likeReview(
+    @Param('id') reviewId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.reviewService.likeReview(reviewId, req.user.userId);
+  }
+
+  @Delete(':id/like')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Unlike a review',
+    description: 'Removes the authenticated user’s like from a review.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID of the review to unlike',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Review unliked successfully.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Like not found.',
+  })
+  async unlikeReview(
+    @Param('id') reviewId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.reviewService.unlikeReview(reviewId, req.user.userId);
   }
 }
