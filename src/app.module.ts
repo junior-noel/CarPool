@@ -63,19 +63,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       password: 'postgresql',
       database: 'CarPool',
       //TypeORM knows about the database table
-      entities: [
-        User,
-        Vehicle,
-        DriverApplication,
-        Ride,
-        RideRequest,
-        PassengerApplication,
-        Booking,
-        Otp,
-        Travel,
-        Review,
-        ReviewLike
-      ],
+     autoLoadEntities: true,
       synchronize: true,
     }),
   ],
