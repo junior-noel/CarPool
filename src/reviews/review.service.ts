@@ -2,7 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
+    NotFoundException,
+  ForbiddenException
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,6 +14,8 @@ import { CreateReviewDto } from './dto/create-review.dto.js';
 import { Travel, TravelStatus } from '../travel/travel.entity.js';
 import { Booking, BookingStatus } from '../bookings/booking.entity.js';
 import { User } from '../users/user.entity.js';
+import { ReviewStatus } from './enums/review-status.enum.js';
+import { UpdateReviewDto } from './dto/update-review.dto.js';
 
 @Injectable()
 export class ReviewService {
@@ -214,5 +217,183 @@ export class ReviewService {
     const savedReview = await this.reviewRepository.save(review);
 
     return savedReview;
+  }
+
+  async getReviewsForUser(userId: string) {
+    // First make sure the user whose reviews we are requesting exists.
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    // Only visible reviews should be returned to normal users.
+    // Hidden and deleted reviews are excluded.
+    const reviews = await this.reviewRepository.find({
+      where: {
+        reviewedUser: { id: userId },
+        status: ReviewStatus.VISIBLE,
+      },
+      relations: ['reviewer', 'reviewedUser', 'travel'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    // Sanitize the response so anonymous reviewers do not have their identity exposed.
+    return reviews.map((review) => {
+      const reviewer = review.isAnonymous
+        ? null
+        : {
+            id: review.reviewer.id,
+            firstName: review.reviewer.firstName,
+            lastName: review.reviewer.lastName,
+          };
+
+      return {
+        id: review.id,
+        reviewer,
+        reviewedUser: {
+          id: review.reviewedUser.id,
+          firstName: review.reviewedUser.firstName,
+          lastName: review.reviewedUser.lastName,
+        },
+        travel: {
+          id: review.travel.id,
+        },
+        rating: review.rating,
+        comment: review.comment,
+        isAnonymous: review.isAnonymous,
+        status: review.status,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+      };
+    });
+  }
+
+  async getReviewsForTravel(travelId: string) {
+    // First make sure the travel exists.
+    const travel = await this.travelRepository.findOne({
+      where: { id: travelId },
+    });
+
+    if (!travel) {
+      throw new NotFoundException('Travel not found.');
+    }
+
+    // Only visible reviews are publicly accessible.
+    const reviews = await this.reviewRepository.find({
+      where: {
+        travel: { id: travelId },
+        status: ReviewStatus.VISIBLE,
+      },
+      relations: ['reviewer', 'reviewedUser', 'travel'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    // Hide the reviewer's identity when the review is anonymous.
+    return reviews.map((review) => {
+      const reviewer = review.isAnonymous
+        ? null
+        : {
+            id: review.reviewer.id,
+            firstName: review.reviewer.firstName,
+            lastName: review.reviewer.lastName,
+          };
+
+      return {
+        id: review.id,
+        reviewer,
+        reviewedUser: {
+          id: review.reviewedUser.id,
+          firstName: review.reviewedUser.firstName,
+          lastName: review.reviewedUser.lastName,
+        },
+        travel: {
+          id: review.travel.id,
+        },
+        rating: review.rating,
+        comment: review.comment,
+        isAnonymous: review.isAnonymous,
+        status: review.status,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+      };
+    });
+  }
+
+  async updateReview(
+    reviewId: string,
+    reviewerId: string,
+    updateReviewDto: UpdateReviewDto,
+  ) {
+    // Find the review together with its reviewer.
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId },
+      relations: ['reviewer'],
+    });
+
+    if (!review) {
+      throw new NotFoundException('Review not found.');
+    }
+
+    // Only the person who originally created the review is allowed to edit it.
+    if (review.reviewer.id !== reviewerId) {
+      throw new ForbiddenException('You can only update your own review.');
+    }
+
+    // A deleted review should not be editable.
+    if (review.status === ReviewStatus.DELETED) {
+      throw new BadRequestException('A deleted review cannot be updated.');
+    }
+
+    // Update only the fields that were actually provided.
+    if (updateReviewDto.rating !== undefined) {
+      review.rating = updateReviewDto.rating;
+    }
+
+    if (updateReviewDto.comment !== undefined) {
+      review.comment = updateReviewDto.comment;
+    }
+
+    if (updateReviewDto.isAnonymous !== undefined) {
+      review.isAnonymous = updateReviewDto.isAnonymous;
+    }
+
+    // TypeORM's @UpdateDateColumn() automatically updates
+    // updatedAt when the entity is saved.
+    return this.reviewRepository.save(review);
+  }
+
+  async deleteReview(reviewId: string, reviewerId: string) {
+    // Find the review together with its original reviewer.
+    const review = await this.reviewRepository.findOne({
+      where: { id: reviewId },
+      relations: ['reviewer'],
+    });
+
+    if (!review) {
+      throw new NotFoundException('Review not found.');
+    }
+
+    // Only the user who created the review can delete it.
+    if (review.reviewer.id !== reviewerId) {
+      throw new ForbiddenException('You can only delete your own review.');
+    }
+
+    // Prevent deleting an already deleted review.
+    if (review.status === ReviewStatus.DELETED) {
+      throw new BadRequestException('This review has already been deleted.');
+    }
+
+    // Soft-delete the review.
+    review.status = ReviewStatus.DELETED;
+    review.deletedAt = new Date();
+
+    return this.reviewRepository.save(review);
   }
 }
