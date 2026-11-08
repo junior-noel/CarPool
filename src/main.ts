@@ -14,7 +14,15 @@ async function bootstrap() {
     .setTitle('CarPool API')
     .setDescription('API documentation for the CarPool ride-sharing platform')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
     .build();
 
   // Generate the OpenAPI document from our NestJS application.

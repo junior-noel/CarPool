@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException,Injectable, NotFoundException} from '@nestjs/common';
+import { BadRequestException, ConflictException,ForbiddenException,Injectable, NotFoundException} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -8,6 +8,10 @@ import { Ride, RideStatus } from '../rides/ride.entity.js';
 import { Booking, BookingStatus } from '../bookings/booking.entity.js';
 import { BookingService } from '../bookings/bookings.service.js';
 import { departureTimestampMs, isWithinDepartureWindow, readWindowMinutes, resolveAppTimezone,} from '../common/time/time.util.js';
+import { ParticipantLocation } from './participant-location.entity.js';
+import { UpdateLocationDto } from './dto/update-location.dto.js';
+import { User } from '../users/user.entity.js';
+import { GpsValidationService } from './gps-validation.service.js';
 
 // Config keys + fallback defaults for the valid time window around travel start (30 min before, 120 min after).
 const WINDOW_BEFORE_KEY = 'TRAVEL_START_WINDOW_BEFORE_MINUTES';
@@ -22,10 +26,21 @@ export class TravelService {
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
 
+    @InjectRepository(Booking)
+    private readonly bookingRepository: Repository<Booking>,
+
+    @InjectRepository(Travel)
+    private readonly travelRepository: Repository<Travel>,
+
+    @InjectRepository(ParticipantLocation)
+    private readonly participantLocationRepository: Repository<ParticipantLocation>,
+
     // Reused so the request-reopen rule lives in exactly one place.
     private readonly bookingService: BookingService,
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
+    // Validates GPS coordinates and classifies reading quality.
+    private readonly gpsValidationService: GpsValidationService,
   ) {}
 
   // True when `now` is within the driver-configured start window around the
@@ -47,7 +62,12 @@ export class TravelService {
       ride.departureTime,
       timeZone,
     );
-    return isWithinDepartureWindow(now.getTime(), departureMs, beforeMin, afterMin);
+    return isWithinDepartureWindow(
+      now.getTime(),
+      departureMs,
+      beforeMin,
+      afterMin,
+    );
   }
 
   /**
@@ -331,5 +351,85 @@ export class TravelService {
         driver: safeDriver,
       };
     });
+  }
+
+  async updateParticipantLocation(
+    travelId: string,
+    participantId: string,
+    dto: UpdateLocationDto,
+  ) {
+    // Validate the GPS reading before allowing it into the tracking pipeline.
+    const validation = this.gpsValidationService.validate({
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      accuracy: dto.accuracy,
+    });
+
+    // Reject invalid coordinates or readings with poor reported accuracy.
+    if (!validation.valid) {
+      throw new BadRequestException(validation.reason);
+    }
+    // Find the Travel and load its Ride.
+    // The Ride is needed because it tells us who the driver is
+    // and which passengers are associated with the journey.
+    // Load both the ride and its driver so the driver authorization
+    // check can compare the authenticated user's ID correctly.
+    const travel = await this.travelRepository.findOne({
+      where: { id: travelId },
+      relations: ['ride', 'ride.driver'],
+    });
+
+    if (!travel) {
+      throw new NotFoundException('Travel not found');
+    }
+
+    // Location updates only make sense while the Travel is active.
+    if (travel.status !== TravelStatus.IN_PROGRESS) {
+      throw new BadRequestException(
+        'Location updates are only allowed for an active travel',
+      );
+    }
+
+    // At this stage we verify that the authenticated user belongs to the Travel.
+    //
+    // The detailed passenger/booking participant validation will strengthened in the next step.
+    const isDriver = travel.ride.driver?.id === participantId;
+
+    if (!isDriver) {
+      const booking = await this.bookingRepository.findOne({
+        where: {
+          ride: { id: travel.ride.id },
+          passenger: { id: participantId },
+          status: BookingStatus.APPROVED,
+        },
+      });
+
+      if (!booking) {
+        throw new ForbiddenException(
+          'You are not an approved participant of this travel',
+        );
+      }
+    }
+
+    // Store the participant's raw GPS observation.
+    //
+    // IMPORTANT:
+    // We are intentionally NOT calculating the vehicle position here yet.
+    // That will be handled by dedicated tracking services.
+    const location = this.participantLocationRepository.create({
+      travel: { id: travelId } as Travel,
+      participant: { id: participantId } as User,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+      accuracy: dto.accuracy,
+    });
+
+    const savedLocation =
+      await this.participantLocationRepository.save(location);
+
+    return {
+      message: 'Location received successfully',
+      location: savedLocation,
+    };
   }
 }

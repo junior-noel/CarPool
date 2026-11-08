@@ -18,6 +18,7 @@ import { Logger } from '@nestjs/common';
 import { OtpService } from '../otp/otp-service.js';
 import { OtpPurpose } from '../otp/otp-purpose.enum.js';
 import { EmailService } from '../email/email.service.js';
+
 import { VerifyOtpDto } from './dto/verify-otp.dto.js';
 import { ResendOtpDto } from './dto/resend-otp.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
