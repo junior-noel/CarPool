@@ -12,6 +12,7 @@ import { TravelPosition } from './travel-position.entity.js';
 import { TravelTrackingController } from './travel-tracking.controller.js';
 import { Booking } from '../bookings/booking.entity.js';
 import { GpsValidationService } from './gps-validation.service.js';
+import { GpsOutlierDetectionService } from './gps-outlier-detection.service.js';
 
 @Module({
   imports: [
@@ -30,6 +31,6 @@ import { GpsValidationService } from './gps-validation.service.js';
     }),
   ],
   controllers: [TravelController, TravelTrackingController],
-  providers: [TravelService, GpsValidationService],
+  providers: [TravelService, GpsValidationService, GpsOutlierDetectionService],
 })
 export class TravelModule {}

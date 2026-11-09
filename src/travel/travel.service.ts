@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException,ForbiddenException,Injectable, NotFoundException} from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -7,13 +13,20 @@ import { Travel, TravelStatus } from './travel.entity.js';
 import { Ride, RideStatus } from '../rides/ride.entity.js';
 import { Booking, BookingStatus } from '../bookings/booking.entity.js';
 import { BookingService } from '../bookings/bookings.service.js';
-import { departureTimestampMs, isWithinDepartureWindow, readWindowMinutes, resolveAppTimezone,} from '../common/time/time.util.js';
+import {
+  departureTimestampMs,
+  isWithinDepartureWindow,
+  readWindowMinutes,
+  resolveAppTimezone,
+} from '../common/time/time.util.js';
 import { ParticipantLocation } from './participant-location.entity.js';
 import { UpdateLocationDto } from './dto/update-location.dto.js';
 import { User } from '../users/user.entity.js';
 import { GpsValidationService } from './gps-validation.service.js';
+import { GpsOutlierDetectionService } from './gps-outlier-detection.service.js';
 
-// Config keys + fallback defaults for the valid time window around travel start (30 min before, 120 min after).
+// Config keys + fallback defaults for the valid time window around travel start
+// (30 minutes before, 120 minutes after).
 const WINDOW_BEFORE_KEY = 'TRAVEL_START_WINDOW_BEFORE_MINUTES';
 const WINDOW_AFTER_KEY = 'TRAVEL_START_WINDOW_AFTER_MINUTES';
 const DEFAULT_BEFORE_MINUTES = 30;
@@ -39,29 +52,37 @@ export class TravelService {
     private readonly bookingService: BookingService,
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
+
     // Validates GPS coordinates and classifies reading quality.
     private readonly gpsValidationService: GpsValidationService,
+
+    // Detects physically unrealistic movement between consecutive readings.
+    private readonly gpsOutlierDetectionService: GpsOutlierDetectionService,
   ) {}
 
   // True when `now` is within the driver-configured start window around the
   // ride's departure, interpreted in APP_TIMEZONE.
   private isWithinStartWindow(ride: Ride, now: Date): boolean {
     const timeZone = resolveAppTimezone(this.configService);
+
     const beforeMin = readWindowMinutes(
       this.configService,
       WINDOW_BEFORE_KEY,
       DEFAULT_BEFORE_MINUTES,
     );
+
     const afterMin = readWindowMinutes(
       this.configService,
       WINDOW_AFTER_KEY,
       DEFAULT_AFTER_MINUTES,
     );
+
     const departureMs = departureTimestampMs(
       ride.departureDate,
       ride.departureTime,
       timeZone,
     );
+
     return isWithinDepartureWindow(
       now.getTime(),
       departureMs,
@@ -147,17 +168,7 @@ export class TravelService {
       }
 
       // Known residual race (documented, not fixed here): ride-request
-      // acceptance (RideRequestService.acceptRequest) creates PENDING bookings
-      // after checking ride.status === SCHEDULED, but it reads the ride without
-      // a lock. A concurrent accept could therefore insert a PENDING booking on
-      // this ride between the snapshot above and the ride lock below, leaving
-      // that booking stranded on an ongoing ride. Fully closing it would require
-      // acceptRequest to also acquire the ride row lock (out of scope this step);
-      // we intentionally do not hold the ride lock while locking bookings here,
-      // which is what keeps the transaction deadlock-free.
-
-      // 2. Lock the ride row last (no relation joins), then re-validate under
-      //    the lock because other transactions may have changed it.
+      // acceptance may create a pending booking after the snapshot above.
       const lockedRide = await rideRepository.findOne({
         where: { id: rideId },
         lock: { mode: 'pessimistic_write' },
@@ -180,11 +191,13 @@ export class TravelService {
         throw new ConflictException('This ride has already been started');
       }
 
-      // 3. Load the ride's relations in a second query (the lock query abov intentionally did not join them).
+      // Load the ride's relations in a second query because the lock query
+      // intentionally did not join them.
       const fullRide = await rideRepository.findOne({
         where: { id: rideId },
         relations: ['driver'],
       });
+
       if (!fullRide) {
         throw new NotFoundException('Ride not found');
       }
@@ -198,21 +211,22 @@ export class TravelService {
         destination: fullRide.destination,
       });
 
-      // The unique travels.rideId constraint is the hard backstop against two
-      // concurrent starts racing past the "no existing travel" check above.
+      // The unique travels.rideId constraint prevents concurrent duplicate starts.
       try {
         await travelRepository.save(travel);
       } catch (error) {
         const code =
           (error as { code?: string }).code ??
           (error as { driverError?: { code?: string } }).driverError?.code;
+
         if (code === '23505') {
           throw new ConflictException('This ride has already been started');
         }
+
         throw error;
       }
 
-      // 4. Mark the ride ongoing and persist it.
+      // Mark the ride ongoing and persist it.
       lockedRide.status = RideStatus.ONGOING;
       await rideRepository.save(lockedRide);
 
@@ -228,19 +242,11 @@ export class TravelService {
 
   /**
    * End the travel for an ongoing ride. In one transaction it:
-   *   1. rejects every still-pending booking (passengers who never boarded),
-   *      reusing the shared request-reopen rule;
-   *   2. completes the Travel (status -> completed, completedAt set);
+   *   1. rejects every still-pending booking,
+   *   2. completes the Travel,
    *   3. marks the ride completed.
    *
-   * Approved bookings are left untouched - they are the travel's passengers.
-   * Completing an already-completed (or cancelled) travel fails with a 409.
-   *
-   * Lock order: pending bookings (ordered by id) and their ride requests first,
-   * then the ride row last. Because a ride has at most one travel, holding the
-   * ride lock also serializes concurrent "end" calls, preventing double
-   * completion. The ride is never locked while a booking or request lock is
-   * being acquired, keeping this deadlock-free against approve/cancel/reject.
+   * Approved bookings are left untouched.
    */
   async endTravel(rideId: string, driverId: string, now = new Date()) {
     // Fast pre-checks (no locks) so clearly invalid requests fail cheaply.
@@ -266,11 +272,7 @@ export class TravelService {
       const rideRepository = manager.getRepository(Ride);
       const travelRepository = manager.getRepository(Travel);
 
-      // 1. Reject every still-pending booking (it did not board). Lock the rows
-      //    alone (no relation joins) ordered by id, then load each booking's
-      //    nullable rideRequest in a second query before applying the shared
-      //    reopen rule. Only PENDING rows are selected, so approved bookings
-      //    (and their requests) are never touched here.
+      // Reject every still-pending booking.
       const pendingBookings = await bookingRepository.find({
         where: {
           ride: { id: rideId },
@@ -293,16 +295,13 @@ export class TravelService {
         booking.status = BookingStatus.REJECTED;
         await bookingRepository.save(booking);
 
-        // Single source of truth for the request-reopen rule.
         await this.bookingService.reopenRequestIfNoOtherActiveBookings(
           manager,
           booking,
         );
       }
 
-      // 2. Lock the ride row last (no relation joins), then re-validate under the
-      //    lock. Since a ride has at most one travel, this lock also prevents a
-      //    concurrent "end" from racing past the travel status check below.
+      // Lock the ride row last and revalidate its status.
       const lockedRide = await rideRepository.findOne({
         where: { id: rideId },
         lock: { mode: 'pessimistic_write' },
@@ -316,12 +315,7 @@ export class TravelService {
         throw new ConflictException('Only an ongoing ride can be ended');
       }
 
-      // 3. Load the travel under the ride lock and confirm it exists and is still
-      //    in progress. A completed/cancelled travel means it was already ended.
-      //    No relation joins: the travel's `driver` OneToOne has no owning
-      //    @JoinColumn, so loading it makes TypeORM fail in createJoinExpression
-      //    ("Cannot read 'joinColumns' of undefined"). The driver is taken from
-      //    the ride instead (it does not own a reliable driver FK of its own).
+      // Load the travel without relation joins.
       const travel = await travelRepository.findOne({
         where: { ride: { id: rideId } },
       });
@@ -334,7 +328,7 @@ export class TravelService {
         throw new ConflictException('This travel has already been completed');
       }
 
-      // 4. Complete the travel and the ride atomically.
+      // Complete the travel and ride atomically.
       travel.status = TravelStatus.COMPLETED;
       travel.completedAt = now;
       await travelRepository.save(travel);
@@ -342,8 +336,7 @@ export class TravelService {
       lockedRide.status = RideStatus.COMPLETED;
       await rideRepository.save(lockedRide);
 
-      // The travel does not own a reliable driver FK, so report the ride's driver
-      // (already loaded in the pre-check above) without leaking its password.
+      // Return a safe driver object without the password.
       const { password, ...safeDriver } = ride.driver;
 
       return {
@@ -353,6 +346,13 @@ export class TravelService {
     });
   }
 
+  /**
+   * Save a participant's GPS observation after validating:
+   *   1. GPS coordinate ranges and accuracy,
+   *   2. travel status,
+   *   3. participant authorization,
+   *   4. movement plausibility against their previous reading.
+   */
   async updateParticipantLocation(
     travelId: string,
     participantId: string,
@@ -365,15 +365,11 @@ export class TravelService {
       accuracy: dto.accuracy,
     });
 
-    // Reject invalid coordinates or readings with poor reported accuracy.
     if (!validation.valid) {
       throw new BadRequestException(validation.reason);
     }
-    // Find the Travel and load its Ride.
-    // The Ride is needed because it tells us who the driver is
-    // and which passengers are associated with the journey.
-    // Load both the ride and its driver so the driver authorization
-    // check can compare the authenticated user's ID correctly.
+
+    // Find the Travel and load its Ride and driver.
     const travel = await this.travelRepository.findOne({
       where: { id: travelId },
       relations: ['ride', 'ride.driver'],
@@ -383,16 +379,14 @@ export class TravelService {
       throw new NotFoundException('Travel not found');
     }
 
-    // Location updates only make sense while the Travel is active.
+    // Location updates are allowed only while the Travel is active.
     if (travel.status !== TravelStatus.IN_PROGRESS) {
       throw new BadRequestException(
         'Location updates are only allowed for an active travel',
       );
     }
 
-    // At this stage we verify that the authenticated user belongs to the Travel.
-    //
-    // The detailed passenger/booking participant validation will strengthened in the next step.
+    // Verify that the authenticated user belongs to this Travel.
     const isDriver = travel.ride.driver?.id === participantId;
 
     if (!isDriver) {
@@ -411,19 +405,51 @@ export class TravelService {
       }
     }
 
+    // Retrieve this participant's most recent GPS reading for this Travel.
+    const previousLocation = await this.participantLocationRepository.findOne({
+      where: {
+        travel: { id: travelId },
+        participant: { id: participantId },
+      },
+      order: {
+        recordedAt: 'DESC',
+      },
+    });
+
+    // Create one timestamp for the incoming GPS observation.
+    const recordedAt = new Date();
+
+    // Validate movement for both the driver and approved passengers.
+    const movementValidation = this.gpsOutlierDetectionService.validateMovement(
+      previousLocation
+        ? {
+            latitude: Number(previousLocation.latitude),
+            longitude: Number(previousLocation.longitude),
+            recordedAt: previousLocation.recordedAt,
+          }
+        : null,
+      {
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        recordedAt,
+      },
+    );
+
+    // Reject readings that indicate unrealistic movement.
+    if (!movementValidation.valid) {
+      throw new BadRequestException(movementValidation.reason);
+    }
+
     // Store the participant's raw GPS observation.
-    //
-    // IMPORTANT:
-    // We are intentionally NOT calculating the vehicle position here yet.
-    // That will be handled by dedicated tracking services.
     const location = this.participantLocationRepository.create({
       travel: { id: travelId } as Travel,
       participant: { id: participantId } as User,
       latitude: dto.latitude,
       longitude: dto.longitude,
       accuracy: dto.accuracy,
+      recordedAt,
     });
-
+    
     const savedLocation =
       await this.participantLocationRepository.save(location);
 
