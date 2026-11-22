@@ -21,7 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 @ApiTags('Driver Application')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('driver-application')
 export class DriverApplicationController {
   constructor(

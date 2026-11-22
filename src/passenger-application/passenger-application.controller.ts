@@ -23,7 +23,7 @@ import {
 import { PassengerGuard } from './guards/passenger.guard.js';
 
 @ApiTags('Passenger Application')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('passenger-application')
 export class PassengerApplicationController {
   constructor(
