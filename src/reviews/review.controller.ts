@@ -25,7 +25,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 
 @ApiTags('Reviews')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('reviews')
 export class ReviewController {
   constructor(private readonly reviewService: ReviewService) {}

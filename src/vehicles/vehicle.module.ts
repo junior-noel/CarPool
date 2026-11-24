@@ -1,17 +1,21 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { PassportModule } from '@nestjs/passport';
+
 import { VehicleController } from './vehicle.controller.js';
 import { VehicleService } from './vehicle.service.js';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { UserModule } from '../users/user.module.js';
 import { Vehicle } from './vehicle.entity.js';
-import { PassportModule } from '@nestjs/passport';
+import { Ride } from '../rides/ride.entity.js';
+import { UserModule } from '../users/user.module.js';
 
 @Module({
   imports: [
-    // Makes the Vehicle repository available to VehicleService.
-    TypeOrmModule.forFeature([Vehicle]),
+    // Registers the repositories needed by VehicleService.
+    TypeOrmModule.forFeature([Vehicle, Ride]),
+
     UserModule,
-    // Provides the Passport configuration required by JwtAuthGuard.
+
+    // Provides Passport configuration for JWT authentication.
     PassportModule.register({
       defaultStrategy: 'jwt',
     }),

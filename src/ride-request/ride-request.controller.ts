@@ -33,7 +33,7 @@ import {
 import { AcceptRideRequestDto } from './dto/accept-ride-request.dto.js';
 
 @ApiTags('Ride Request')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('ride-request')
 export class RideRequestController {
   constructor(private readonly rideRequestService: RideRequestService) {}

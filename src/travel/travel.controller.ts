@@ -10,7 +10,7 @@ import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-requ
 // Declared on the "rides" base path so the start action lives with the ride it
 // belongs to, without touching the existing RidesController.
 @ApiTags('Travel')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('rides')
 export class TravelController {
   constructor(private readonly travelService: TravelService) {}

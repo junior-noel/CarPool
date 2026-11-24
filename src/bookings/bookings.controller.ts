@@ -28,7 +28,7 @@ import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-requ
 import { DriverGuard } from '../auth/guards/driver.guard.js';
 
 @ApiTags('Bookings')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('bookings')
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}

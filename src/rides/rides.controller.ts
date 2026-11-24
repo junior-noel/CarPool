@@ -9,7 +9,7 @@ import { Ride } from './ride.entity.js';
 import { SearchRidesDto } from './dto/search-rides.dto.js';
 
 @ApiTags('Rides')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('rides')
 export class RidesController {
   constructor(private readonly ridesService: RidesService) {}
