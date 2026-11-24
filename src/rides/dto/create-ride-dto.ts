@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsNumber,
   IsInt,
+  Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsUUID } from 'class-validator';
@@ -37,6 +38,9 @@ export class CreateRideDto {
   })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, {
+    message: 'Departure time must use HH:mm or HH:mm:ss format',
+  })
   departureTime: string;
 
   @ApiProperty({

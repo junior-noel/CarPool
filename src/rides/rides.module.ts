@@ -6,10 +6,11 @@ import { Ride } from './ride.entity.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from '../users/user.module.js';
 import { Vehicle } from '../vehicles/vehicle.entity.js';
+import { Booking } from '../bookings/booking.entity.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Ride, Vehicle]),
+    TypeOrmModule.forFeature([Ride, Vehicle, Booking]),
     UserModule,
     // Provides Passport configuration required by JwtAuthGuard.
     PassportModule.register({

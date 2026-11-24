@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Post,  Query, Req, UseGuards,} from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { RidesService } from './rides.service.js';
 import { CreateRideDto } from './dto/create-ride-dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
@@ -7,6 +18,7 @@ import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-requ
 import {ApiBearerAuth,ApiBadRequestResponse, ApiCreatedResponse, ApiOkResponse,ApiOperation,ApiParam,  ApiQuery, ApiTags,} from '@nestjs/swagger';
 import { Ride } from './ride.entity.js';
 import { SearchRidesDto } from './dto/search-rides.dto.js';
+import { UpdateRideDto } from './dto/update-ride-dto.js';
 
 @ApiTags('Rides')
 @ApiBearerAuth('JWT-auth')
@@ -116,5 +128,44 @@ export class RidesController {
 
     // Pass the driver ID and ride information to the service for validation and creation.
     return this.ridesService.create(userId, createRideDto);
+  }
+
+  // Update one or more fields of a future ride owned by the authenticated driver.
+  @ApiOperation({
+    summary: 'Update a scheduled ride',
+    description:
+      'Updates a future scheduled ride while protecting vehicle ownership and approved-seat capacity.',
+  })
+  @ApiParam({ name: 'id', description: 'ID of the ride to update' })
+  @ApiOkResponse({ description: 'Ride updated successfully', type: Ride })
+  @UseGuards(JwtAuthGuard, DriverGuard)
+  @Patch(':id')
+  updateRide(
+    @Param('id', ParseUUIDPipe) rideId: string,
+    @Body() updateRideDto: UpdateRideDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.ridesService.update(
+      rideId,
+      request.user.userId,
+      updateRideDto,
+    );
+  }
+
+  // Cancel a ride instead of deleting it so ride and booking history remain auditable.
+  @ApiOperation({
+    summary: 'Cancel a scheduled ride',
+    description:
+      'Cancels a ride and its active bookings, while reopening eligible ride requests.',
+  })
+  @ApiParam({ name: 'id', description: 'ID of the ride to cancel' })
+  @ApiOkResponse({ description: 'Ride cancelled successfully', type: Ride })
+  @UseGuards(JwtAuthGuard, DriverGuard)
+  @Post(':id/cancel')
+  cancelRide(
+    @Param('id', ParseUUIDPipe) rideId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.ridesService.cancel(rideId, request.user.userId);
   }
 }
