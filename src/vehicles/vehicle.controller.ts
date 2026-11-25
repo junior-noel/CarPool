@@ -8,9 +8,9 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
-import { VehicleService } from '../vehicles/vehicle.service.js';
-import { CreateVehicleDto } from '../vehicles/dto/create-vehicle.dto.js';
-import { UpdateVehicleDto } from '../vehicles/dto/update-vehicle.dto.js';
+import { VehicleService } from './vehicle.service.js';
+import { CreateVehicleDto } from './dto/create-vehicle.dto.js';
+import { UpdateVehicleDto } from './dto/update-vehicle.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 import { DriverGuard } from '../auth/guards/driver.guard.js';

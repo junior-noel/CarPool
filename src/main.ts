@@ -9,6 +9,10 @@ async function bootstrap() {
     instrument: ObserveInstrument,
   });
 
+  app.enableCors({
+    origin: 'http://localhost:5173',
+  });
+
   // Configure the basic information about the CarPool API.
   const config = new DocumentBuilder()
     .setTitle('CarPool API')
